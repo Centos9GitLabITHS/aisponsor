@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: sponsor_match
+Version: 0.1.0
+Provides-Extra: dev
+Requires-Dist: pandas>=2.2; extra == "dev"
+Requires-Dist: numpy>=2.2; extra == "dev"
+Requires-Dist: scikit-learn>=1.6; extra == "dev"
+Requires-Dist: joblib>=1.5; extra == "dev"
+Requires-Dist: threadpoolctl>=3.6; extra == "dev"
+Requires-Dist: python-dotenv>=1.1; extra == "dev"
+Requires-Dist: mysql-connector-python>=9.3; extra == "dev"
+Requires-Dist: geopy>=2.4; extra == "dev"
