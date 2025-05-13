@@ -5,25 +5,26 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f27783fc-e02d-4d39-ad27-aca1d5896aaa" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.env" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/SponsorMatchAI.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/app/streamlit_app.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/data/associations_goteborg.csv" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/data/bolag_1_500_sorted_with_year.xlsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/scripts/build_associations_csv.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/app.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/clustering.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/db.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/features.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/ingest_associations.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/ingest_excel.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/service.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/analyze_text_files.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/create_simple_dump.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/deep_analyze.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sponsor_match/db_init.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sponsor_match/train_matcher.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tasks.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.geo_cache.sqlite3" beforeDir="false" afterPath="$PROJECT_DIR$/.geo_cache.sqlite3" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/associations_goteborg_with_coords.csv" beforeDir="false" afterPath="$PROJECT_DIR$/data/associations_goteborg_with_coords.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/build_associations_csv.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/build_associations_csv.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/session_changes.tgz" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match.egg-info/SOURCES.txt" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match.egg-info/SOURCES.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/clustering.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/clustering.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ingest_associations.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ingest_associations.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match_20250513.tgz" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match_20250513.tgz" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -51,16 +52,16 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/bakri/PycharmProjects/SponsorMatchAI/data&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "master",
+    "last_opened_file_path": "/home/bakri/PycharmProjects/SponsorMatchAI/data",
+    "settings.editor.selected.configurable": "com.intellij.pycharm.community.ide.impl.configuration.PythonContentEntriesConfigurable"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/data" />

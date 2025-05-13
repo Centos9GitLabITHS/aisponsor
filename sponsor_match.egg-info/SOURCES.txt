@@ -1,9 +1,12 @@
 pyproject.toml
+sponsor_match/app.py
 sponsor_match/clustering.py
 sponsor_match/db.py
 sponsor_match/features.py
 sponsor_match/ingest_associations.py
 sponsor_match/ingest_excel.py
+sponsor_match/service.py
+sponsor_match/train_matcher.py
 sponsor_match.egg-info/PKG-INFO
 sponsor_match.egg-info/SOURCES.txt
 sponsor_match.egg-info/dependency_links.txt

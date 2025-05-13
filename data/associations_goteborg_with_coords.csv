@@ -1,11 +1,11 @@
-id,name,member_count,address,lat,lon,size_bucket
-1,IFK Göteborg,6125,"Ullevigatan 5, 411 40 Göteborg",57.7071347,11.9783278,large
-2,BK Häcken,4000,"Gustaf Dalénsgatan 2, 417 05 Göteborg",57.721049,11.9447139,large
-3,GAIS,3100,"Ullevigatan 5, 411 40 Göteborg",57.7071347,11.9783278,large
-4,Örgryte IS,4000,"Gamla Ullevi, Göteborg",57.706261,11.9801228,large
-5,Västra Frölunda IF,2000,"Ruddalavägen 50, 426 55 Västra Frölunda",57.65176,11.91399,large
-6,Qviding FIF,1500,"Härlanda Park, 416 78 Göteborg",57.7173308,12.0171999,large
-7,Utsiktens BK,1200,"Ruddalens Idrottsplats, Västra Frölunda",57.6526,11.9143,large
-8,Lundby IF,1000,"Länsmansgårdens Idrottsplats, Göteborg",57.75844,11.90678,large
-9,Gunnilse IS,1200,"Hjällbovallen, Angered",57.80507,12.03513,large
-10,Göteborgs FF,800,"Majvallen Idrottsplats, Kungsladugård",57.68847,11.94094,large
+id,name,member_count,address,size_bucket,lat,lon
+1,IFK Göteborg,6125,"Ullevigatan 5, 411 40 Göteborg",large,57.7071347,11.9783278
+2,BK Häcken,4000,"Gustaf Dalénsgatan 2, 417 05 Göteborg",large,57.721049,11.9447139
+3,GAIS,3100,"Ullevigatan 5, 411 40 Göteborg",large,57.7071347,11.9783278
+4,Örgryte IS,4000,"Gamla Ullevi, Göteborg",large,57.706261,11.9801228
+5,Västra Frölunda IF,2000,"Ruddalavägen 50, 426 55 Västra Frölunda",large,,
+6,Qviding FIF,1500,"Härlanda Park, 416 78 Göteborg",large,57.7173308,12.0171999
+7,Utsiktens BK,1200,"Ruddalens IP, Västra Frölunda",large,57.6643519,11.9093116
+8,Lundby IF,1000,"Länsmansgårdens IP, Göteborg",large,57.7329736,11.892594
+9,Gunnilse IS,1200,"Hjällbovallen, Angered",large,57.775849,12.0212373
+10,Göteborgs FF,800,"Majvallen, Kungsladugård",large,57.6910747,11.935553

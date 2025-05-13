@@ -1,0 +1,848 @@
+SPONSORMATCHAI PROJECT DUMP
+==================================================
+
+
+sponsor_match/
+------------------------------
+  clustering.py
+  ingest_excel.py
+  service.py
+  app.py
+  train_matcher.py
+  ingest_associations.py
+  features.py
+  db_init.py
+  db.py
+
+========================================
+FILE: sponsor_match/clustering.py
+========================================
+
+import joblib, pandas as pd, numpy as np, pathlib
+from sklearn.cluster import MiniBatchKMeans
+from sponsor_match.db import get_engine
+
+MODEL_DIR = pathlib.Path("models"); MODEL_DIR.mkdir(exist_ok=True)
+
+def train_kmeans(df, size_bucket: str):
+    coords = df[["lat", "lon"]].dropna().to_numpy()
+    km = MiniBatchKMeans(n_clusters=8, random_state=42, batch_size=256).fit(coords)
+    joblib.dump(km, MODEL_DIR / f"kmeans_{size_bucket}.joblib")
+
+def main():
+    eng = get_engine()
+    clubs = pd.read_sql("select * from clubs", eng)
+    firms = pd.read_sql("select * from companies", eng)
+
+    for bucket in ["small","medium","large"]:
+        sub = firms[firms.size_bucket==bucket]
+        if len(sub) >= 100:
+            train_kmeans(sub, bucket)
+
+if __name__ == "__main__":
+    main()
+
+
+========================================
+FILE: sponsor_match/ingest_excel.py
+========================================
+
+"""
+sponsor_match/ingest_excel.py
+─────────────────────────────
+Loads the Excel file  data/bolag_1_500_sorted_with_year.xlsx
+into the MariaDB table  sponsor_registry.companies.
+
+Usage:
+    $ python -m sponsor_match.ingest_excel
+"""
+
+from pathlib import Path
+
+import pandas as pd
+from sqlalchemy import text
+
+from sponsor_match.db import get_engine
+
+# ───────────────────────────────────────────────
+# 1. Locate Excel file (relative to project root)
+# ───────────────────────────────────────────────
+ROOT_DIR = Path(__file__).resolve().parents[1]          # …/SponsorMatchAI
+EXCEL    = ROOT_DIR / "data" / "bolag_1_500_sorted_with_year.xlsx"
+
+# ───────────────────────────────────────────────
+# 2. Read + tidy DataFrame
+# ───────────────────────────────────────────────
+df = pd.read_excel(EXCEL)
+
+df = df.rename(
+    columns={
+        "Företagsnamn":     "name",
+        "Postadress":       "address",
+        "Omsättning (tkr)": "revenue_ksek",
+        "Anställda":        "employees",
+        "År":               "year",
+    }
+)
+
+df["rev_per_emp"] = (df["revenue_ksek"] * 1000) / df["employees"].clip(lower=1)
+
+# size bucket by total revenue (adjust thresholds freely)
+bins   = [0, 5_000_000, 50_000_000, float("inf")]
+labels = ["small", "medium", "large"]
+df["size_bucket"] = pd.cut(df["revenue_ksek"] * 1000, bins=bins, labels=labels)
+
+# keep only the columns we’ll insert
+df = df[
+    ["name", "address", "revenue_ksek",
+     "employees", "year", "rev_per_emp", "size_bucket"]
+]
+
+# ───────────────────────────────────────────────
+# 3. Write to MariaDB
+# ───────────────────────────────────────────────
+engine = get_engine()
+
+DDL = """
+CREATE TABLE IF NOT EXISTS companies (
+  comp_id      BIGINT AUTO_INCREMENT PRIMARY KEY,
+  name         TEXT,
+  address      TEXT,
+  revenue_ksek DOUBLE,
+  employees    INT,
+  year         INT,
+  rev_per_emp  DOUBLE,
+  size_bucket  ENUM('small','medium','large'),
+  industry     TEXT,
+  lat          DOUBLE,
+  lon          DOUBLE
+)  CHARACTER SET utf8mb4;
+"""
+
+with engine.begin() as con:
+    con.execute(text(DDL))
+    df.to_sql("companies", con, if_exists="append", index=False)
+
+print(f"✅ Imported {len(df):,} rows into sponsor_registry.companies")
+
+
+========================================
+FILE: sponsor_match/service.py
+========================================
+
+# sponsor_match/service.py
+"""
+Business-logic layer:
+ • fetch companies of the same size bucket from MySQL
+ • drop rows lacking coordinates
+ • pick the *nearest cluster* of companies (MiniBatch-KMeans) to the club
+ • rank by distance + revenue/employee
+"""
+from __future__ import annotations
+
+import pathlib
+import joblib
+import numpy as np
+import pandas as pd
+from sklearn.cluster import MiniBatchKMeans
+from sklearn.metrics import pairwise_distances
+
+from sponsor_match.db import get_engine
+
+# ──────────────────────────────────────────────────────────────
+# 1.  Load any K-means models that are present on disk
+#     (they are trained by sponsor_match/clustering.py)
+# ──────────────────────────────────────────────────────────────
+MODELS: dict[str, MiniBatchKMeans] = {
+    b: joblib.load(f"models/kmeans_{b}.joblib")          # type: ignore[override]
+    for b in ("small", "medium", "large")
+    if pathlib.Path(f"models/kmeans_{b}.joblib").exists()
+}
+
+# ──────────────────────────────────────────────────────────────
+# 2.  Recommend sponsors
+# ──────────────────────────────────────────────────────────────
+def recommend(lat: float, lon: float, bucket: str, top_n: int = 15) -> pd.DataFrame:
+    """
+    Return *top_n* candidate companies for a club located at (*lat*, *lon*).
+
+    Parameters
+    ----------
+    lat, lon : float
+        Club’s latitude & longitude (WGS-84).
+    bucket : {'small', 'medium', 'large'}
+        Size segment of the club.  We only compare with companies
+        in the **same** segment.
+    top_n : int, default 15
+        How many suggestions to return.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: name, revenue_ksek, employees, dist_km, lat, lon
+    """
+    eng = get_engine()
+
+    # --- pull companies of the same size bucket -------------
+    firms = pd.read_sql(
+        "SELECT * FROM companies WHERE size_bucket = :bucket",
+        eng,
+        params={"bucket": bucket},
+    )
+
+    # ignore rows without coordinates
+    firms = firms.dropna(subset=["lat", "lon"]).reset_index(drop=True)
+    if firms.empty:
+        return pd.DataFrame()
+
+    # --- cluster-aware candidate set ------------------------
+    if bucket in MODELS:
+        model = MODELS[bucket]
+        label = int(model.predict([[lat, lon]])[0])
+        cand = firms.loc[model.labels_ == label].copy()
+    else:                         # cold-start fallback
+        cand = firms.copy()
+
+    # --- distance (coarse: 1 deg ≈ 111 km) ------------------
+    cand["dist_km"] = (
+        pairwise_distances(cand[["lat", "lon"]], np.array([[lat, lon]]), metric="euclidean")
+        * 111.0
+    )
+
+    # --- rank & trim ----------------------------------------
+    cols_keep = [
+        "name",          # change to 'company_name' if that’s the actual column
+        "revenue_ksek",
+        "employees",
+        "dist_km",
+        "lat",
+        "lon",
+    ]
+    out = (
+        cand.sort_values(["dist_km", "rev_per_emp"], ascending=[True, False])
+        .head(top_n)
+        .loc[:, cols_keep]
+        .reset_index(drop=True)
+    )
+    return out
+
+
+========================================
+FILE: sponsor_match/app.py
+========================================
+
+# sponsor_match/app.py  – v1.1 (handles blanks, adds map & nicer UX)
+import streamlit as st, pandas as pd, folium, pathlib
+from streamlit_folium import st_folium
+from geopy.extra.rate_limiter import RateLimiter
+from geopy.geocoders import Nominatim
+from sponsor_match.service import recommend
+
+DATA = pathlib.Path(__file__).parents[1] / "data" / "associations_goteborg_with_coords.csv"
+clubs = pd.read_csv(DATA).sort_values("name")
+
+# derive size bucket on-the-fly if column absent
+if "size_bucket" not in clubs.columns:
+    clubs["size_bucket"] = pd.cut(
+        clubs["member_count"], [0, 100, 500, float("inf")],
+        labels=["small", "medium", "large"]
+    )
+
+st.set_page_config(page_title="⚽ SponsorMatch AI", layout="wide")
+st.title("Find matching sponsors in Göteborg")
+
+col1, col2 = st.columns(2)
+club_sel = col1.selectbox("Choose your club", ["— choose —", *clubs.name])
+addr_txt = col2.text_input("…or type an address / post-code in Göteborg")
+
+if club_sel != "— choose —":
+    default_bucket = clubs.loc[clubs.name == club_sel, "size_bucket"].iat[0]
+else:
+    default_bucket = "medium"
+
+size_bucket = st.selectbox(
+    "Club size", ["small", "medium", "large"],
+    index=["small","medium","large"].index(default_bucket)
+)
+
+if st.button("Search"):
+    with st.spinner("Geocoding & matching…"):
+        # resolve coordinates
+        if club_sel != "— choose —":
+            row = clubs.loc[clubs.name == club_sel].iloc[0]
+            if pd.isna(row.lat) or pd.isna(row.lon):
+                st.error("That club is still missing coordinates – run build_associations_csv again.")
+                st.stop()
+            lat, lon = float(row.lat), float(row.lon)
+        else:
+            if not addr_txt:
+                st.warning("Enter an address or pick a club first.")
+                st.stop()
+            geo = RateLimiter(Nominatim(user_agent="sponsormatch").geocode)
+            loc = geo(addr_txt + ", Göteborg, Sweden")
+            if not loc:
+                st.error("Could not geocode that address.")
+                st.stop()
+            lat, lon = loc.latitude, loc.longitude
+
+        matches = recommend(lat, lon, size_bucket)
+    if matches.empty:
+        st.info("No matches yet for this cluster.")
+    else:
+        st.success(f"Top {len(matches)} suggested sponsors")
+        st.dataframe(matches)
+
+        m = folium.Map(location=[lat, lon], zoom_start=11)
+        folium.Marker([lat, lon], popup="Your club").add_to(m)
+        for _, r in matches.iterrows():
+            folium.Marker([r.lat, r.lon], popup=r.company_name).add_to(m)
+        st_folium(m, use_container_width=True)
+
+
+========================================
+FILE: sponsor_match/train_matcher.py
+========================================
+
+# sponsor_match/train_matcher.py
+import joblib, pandas as pd, pathlib
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import GradientBoostingClassifier
+from sponsor_match.features import make_pair_features   # write small helper
+
+MODEL_DIR = pathlib.Path("models"); MODEL_DIR.mkdir(exist_ok=True)
+
+def main():
+    df = pd.read_parquet("data/positive_pairs.parquet")  # 1=already sponsored
+    X = make_pair_features(df)
+    y = df["label"]
+    X_train,X_val,y_train,y_val = train_test_split(X,y,test_size=.2,random_state=1)
+    clf = GradientBoostingClassifier().fit(X_train, y_train)
+    print("val AUC:", clf.score(X_val,y_val))
+    joblib.dump(clf, MODEL_DIR/"match_gb.joblib")
+
+if __name__ == "__main__":
+    main()
+
+
+========================================
+FILE: sponsor_match/ingest_associations.py
+========================================
+
+"""
+Load a club CSV (with lat/lon) into MariaDB table `clubs`.
+id is PRIMARY KEY, so re-running is idempotent.
+"""
+import pathlib, pandas as pd, sqlalchemy as sa
+from sponsor_match.db import get_engine
+
+def main(csv_file: str):
+    df = pd.read_csv(csv_file)
+    eng = get_engine()
+    with eng.begin() as con:
+        con.exec_driver_sql("""
+        CREATE TABLE IF NOT EXISTS clubs(
+          id           INT PRIMARY KEY,
+          name         TEXT,
+          member_count INT,
+          address      TEXT,
+          size_bucket  ENUM('small','medium','large'),
+          lat          DOUBLE,
+          lon          DOUBLE
+        ) CHARACTER SET utf8mb4""")
+
+        df.to_sql("clubs", con, if_exists="replace", index=False)  # overwrite whole table
+
+if __name__ == "__main__":
+    main("data/associations_goteborg_with_coords.csv")
+
+
+========================================
+FILE: sponsor_match/features.py
+========================================
+
+from geopy.distance import geodesic
+import pandas as pd
+
+def distance_km(lat1, lon1, lat2, lon2):
+    return geodesic((lat1, lon1), (lat2, lon2)).km
+
+def add_distance(df: pd.DataFrame, lat, lon):
+    df = df.copy()
+    df["distance_km"] = df.apply(
+        lambda r: distance_km(lat, lon, r.lat, r.lon), axis=1
+    )
+    return df
+
+def assoc_size_bucket(members: int) -> str:
+    if members < 200:
+        return "small"
+    if members < 1000:
+        return "medium"
+    return "large"
+
+
+========================================
+FILE: sponsor_match/db_init.py
+========================================
+
+# sponsor_match/db_init.py
+from textwrap import dedent
+from sponsor_match.db import get_engine
+
+eng = get_engine()          # ← we call it “eng”
+
+DDL = dedent("""
+    CREATE TABLE IF NOT EXISTS clubs (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        name         VARCHAR(120),
+        size_bucket  ENUM('small','medium','large'),
+        lat  DOUBLE, lon DOUBLE
+    ) CHARACTER SET utf8mb4;
+
+    CREATE TABLE IF NOT EXISTS companies (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        orgnr        CHAR(10),
+        name         VARCHAR(200),
+        revenue_ksek DOUBLE,
+        employees    INT,
+        year         INT,
+        rev_per_emp  DOUBLE,
+        size_bucket  ENUM('small','medium','large'),
+        industry     VARCHAR(120),
+        lat  DOUBLE, lon DOUBLE
+    ) CHARACTER SET utf8mb4;
+""")
+
+if __name__ == "__main__":
+    with eng.begin() as conn:          # ← use “eng”, not “engine”
+        for stmt in DDL.strip().split(";"):
+            if stmt.strip():
+                conn.exec_driver_sql(stmt)
+    print("✅  MySQL tables ready")
+
+
+========================================
+FILE: sponsor_match/db.py
+========================================
+
+# sponsor_match/db.py
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+import os
+from dotenv import load_dotenv
+
+load_dotenv()                    # read .env in project root if present
+
+def get_engine() -> Engine:
+    url = (
+        f"mysql+mysqlconnector://{os.getenv('MYSQL_USER', 'sponsor_user')}:"
+        f"{os.getenv('MYSQL_PASSWORD', 'Sports-2025?!')}@"
+        f"{os.getenv('MYSQL_HOST', 'localhost')}:"
+        f"{os.getenv('MYSQL_PORT', '3306')}/"
+        f"{os.getenv('MYSQL_DB', 'sponsor_registry')}"
+    )
+    return create_engine(url, pool_pre_ping=True)
+
+
+scripts/
+------------------------------
+  __init__.py
+  build_associations_csv.py
+
+========================================
+FILE: scripts/__init__.py
+========================================
+
+# makes scripts a package
+
+
+========================================
+FILE: scripts/build_associations_csv.py
+========================================
+
+# scripts/build_associations_csv.py
+"""
+Read associations_goteborg.csv  → add lat / lon  → write *_with_coords.csv
+Retry logic:
+    1. full address as-is
+    2. append ", Göteborg, Sweden"
+    3. replace suburb with "Göteborg"
+    4. fall back to postal-code only
+If all fail → keep NaNs so you notice the problem.
+"""
+
+from __future__ import annotations
+
+import pathlib
+import sys
+
+import pandas as pd
+from geopy.extra.rate_limiter import RateLimiter
+from geopy.geocoders import Nominatim
+
+SRC  = pathlib.Path(sys.argv[1])
+DEST = SRC.with_name(SRC.stem + "_with_coords.csv")
+
+# 1 ─── read
+df = pd.read_csv(SRC)
+
+# 2 ─── geocoder (1 req / sec, 10 s timeout, Sweden only)
+geo = Nominatim(
+    user_agent="sponsor_match_geo",
+    timeout=10,
+    scheme="https",
+)
+geocode = RateLimiter(geo.geocode, min_delay_seconds=1.1)
+
+def try_geocode(addr: str) -> tuple[float | None, float | None]:
+    """Return (lat, lon) or (None, None)."""
+    variants = [
+        addr,                                          # original
+        f"{addr}, Sweden",                             # add country
+        addr.replace("Västra Frölunda", "Göteborg"),   # use city
+        addr.split(",")[1].strip() if "," in addr else addr,  # postcode only
+    ]
+    for query in variants:
+        if not query:
+            continue
+        loc = geocode(query, country_codes="se", exactly_one=True)
+        if loc:
+            return loc.latitude, loc.longitude
+    return None, None
+
+# 3 ─── look-up missing coords
+missing = df["lat"].isna() | df["lon"].isna()
+print(f"→ need to geocode {missing.sum()}/{len(df)} rows")
+fails = []
+for idx, row in df[missing].iterrows():
+    lat, lon = try_geocode(row["address"])
+    if lat is None:
+        fails.append(row["address"])
+    df.at[idx, "lat"], df.at[idx, "lon"] = lat, lon
+
+if fails:
+    print("⚠ still missing:", ", ".join(fails))
+
+# 4 ─── add / refresh size_bucket
+bins   = [0, 100, 500, float("inf")]
+labels = ["small", "medium", "large"]
+df["size_bucket"] = pd.cut(df["member_count"], bins=bins, labels=labels)
+
+# 5 ─── save
+df.to_csv(DEST, index=False)
+print(f"✅ wrote {len(df)} rows → {DEST}")
+
+
+app/
+------------------------------
+  streamlit_app.py
+
+========================================
+FILE: app/streamlit_app.py
+========================================
+
+import streamlit as st
+from sponsor_match.recommend import recommend
+
+st.set_page_config(page_title="SponsorMatch AI", layout="wide")
+st.title("Find Your Ideal Sponsors")
+
+assoc_id = st.number_input("Association ID", value=1, step=1)
+if st.button("Find Sponsors"):
+    df = recommend(assoc_id)
+    st.dataframe(df[["name", "distance_km", "score", "rank"]])
+
+
+Root directory files:
+------------------------------
+  tasks.py
+  analyze_text_files.py
+  create_simple_dump.py
+  deep_analyze.py
+
+========================================
+FILE: tasks.py
+========================================
+
+from invoke import task, run
+
+@task
+def setup(c):           c.run("pip install -e '.[dev]'")
+
+@task
+def data(c):
+    c.run("python -m scripts.build_associations_csv data/associations_goteborg.csv")
+    c.run("python -m sponsor_match.ingest_excel")
+    c.run("python -m sponsor_match.ingest_associations data/associations_goteborg_with_coords.csv")
+
+@task
+def train(c):
+    c.run("python -m sponsor_match.clustering")
+
+@task
+def app(c):
+    c.run("streamlit run sponsor_match/app.py", pty=True)
+
+
+========================================
+FILE: analyze_text_files.py
+========================================
+
+# create_selective_dump.py
+import os
+from pathlib import Path
+
+
+def create_selective_dump(output_file='project_dump_selective.txt'):
+    # Only include actual source code files
+    code_extensions = ('.py', '.yml', '.yaml', '.toml', '.cfg', '.ini')
+    exclude_dirs = {'venv', '.venv312', '__pycache__', '.git', '.idea', 'build', 'dist'}
+    max_file_size = 500 * 1024  # 500KB max per file
+
+    included_count = 0
+    excluded_count = 0
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        # Write project structure first
+        f.write("PROJECT STRUCTURE:\n")
+        f.write("=" * 50 + "\n\n")
+
+        for root, dirs, files in os.walk('.'):
+            dirs[:] = [d for d in dirs if d not in exclude_dirs]
+
+            level = root.replace('.', '').count(os.sep)
+            indent = '  ' * level
+            dir_name = os.path.basename(root) or 'SponsorMatchAI'
+            f.write(f'{indent}{dir_name}/\n')
+
+            sub_indent = '  ' * (level + 1)
+            for file in files:
+                if any(file.endswith(ext) for ext in code_extensions):
+                    f.write(f'{sub_indent}{file}\n')
+
+        f.write("\n\nFILE CONTENTS:\n")
+        f.write("=" * 50 + "\n\n")
+
+        # Write file contents
+        for root, dirs, files in os.walk('.'):
+            dirs[:] = [d for d in dirs if d not in exclude_dirs]
+
+            for file in files:
+                if any(file.endswith(ext) for ext in code_extensions):
+                    file_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(file_path, '.')
+
+                    try:
+                        file_size = os.path.getsize(file_path)
+
+                        if file_size > max_file_size:
+                            f.write(f"\n{'=' * 30}\n")
+                            f.write(f"FILE: {relative_path} (EXCLUDED - {file_size // 1024}KB)\n")
+                            f.write(f"{'=' * 30}\n\n")
+                            excluded_count += 1
+                            continue
+
+                        f.write(f"\n{'=' * 30}\n")
+                        f.write(f"FILE: {relative_path}\n")
+                        f.write(f"{'=' * 30}\n\n")
+
+                        with open(file_path, 'r', encoding='utf-8') as source_file:
+                            f.write(source_file.read())
+
+                        included_count += 1
+
+                    except Exception as e:
+                        f.write(f"Error reading file: {e}\n")
+
+                    f.write("\n")
+
+    print(f"Created {output_file}")
+    print(f"Included files: {included_count}")
+    print(f"Excluded large files: {excluded_count}")
+
+    # Check final size
+    dump_size = os.path.getsize(output_file)
+    print(f"Dump size: {dump_size // 1024 // 1024}MB")
+
+
+# Also create a list of large files that were excluded
+def list_excluded_files():
+    with open('excluded_files.txt', 'w') as f:
+        f.write("Large files excluded from dump:\n\n")
+
+        for root, dirs, files in os.walk('.'):
+            dirs[:] = [d for d in dirs if d not in {'venv', '.venv312', '__pycache__', '.git'}]
+
+            for file in files:
+                if file.endswith(('.json', '.csv', '.txt', '.md')):
+                    file_path = os.path.join(root, file)
+                    try:
+                        size = os.path.getsize(file_path)
+                        if size > 500 * 1024:  # >500KB
+                            f.write(f"{file_path}: {size // 1024}KB\n")
+                    except:
+                        pass
+
+
+if __name__ == "__main__":
+    create_selective_dump()
+    list_excluded_files()
+
+
+========================================
+FILE: create_simple_dump.py
+========================================
+
+# create_simple_dump.py
+import os
+
+
+def create_simple_dump():
+    """Super simple dump - just Python files from your main directories"""
+
+    # Just get Python files from these specific directories
+    target_dirs = [
+        'sponsor_match',
+        'scripts',
+        'app',
+        '.'  # root directory files like setup.py
+    ]
+
+    with open('project_dump_simple.txt', 'w', encoding='utf-8') as f:
+        f.write("SPONSORMATCHAI PROJECT DUMP\n")
+        f.write("=" * 50 + "\n\n")
+
+        file_count = 0
+
+        for target_dir in target_dirs:
+            if not os.path.exists(target_dir):
+                continue
+
+            if target_dir == '.':
+                # For root, only get Python files directly in root
+                files = [f for f in os.listdir('.') if f.endswith('.py')]
+                if files:
+                    f.write(f"\nRoot directory files:\n")
+                    f.write("-" * 30 + "\n")
+                    for file in files:
+                        f.write(f"  {file}\n")
+
+                    for file in files:
+                        f.write(f"\n{'=' * 40}\n")
+                        f.write(f"FILE: {file}\n")
+                        f.write(f"{'=' * 40}\n\n")
+
+                        try:
+                            with open(file, 'r', encoding='utf-8') as src:
+                                f.write(src.read())
+                            file_count += 1
+                        except Exception as e:
+                            f.write(f"Error: {e}\n")
+                        f.write("\n")
+            else:
+                # For other directories, walk through them
+                for root, dirs, files in os.walk(target_dir):
+                    # Skip __pycache__
+                    if '__pycache__' in root:
+                        continue
+
+                    py_files = [f for f in files if f.endswith('.py')]
+                    if py_files:
+                        f.write(f"\n{root}/\n")
+                        f.write("-" * 30 + "\n")
+                        for file in py_files:
+                            f.write(f"  {file}\n")
+
+                        for file in py_files:
+                            filepath = os.path.join(root, file)
+                            f.write(f"\n{'=' * 40}\n")
+                            f.write(f"FILE: {filepath}\n")
+                            f.write(f"{'=' * 40}\n\n")
+
+                            try:
+                                with open(filepath, 'r', encoding='utf-8') as src:
+                                    f.write(src.read())
+                                file_count += 1
+                            except Exception as e:
+                                f.write(f"Error: {e}\n")
+                            f.write("\n")
+
+    size = os.path.getsize('project_dump_simple.txt')
+    print(f"Created project_dump_simple.txt")
+    print(f"Included {file_count} Python files")
+    print(f"Size: {size / 1024:.1f} KB")
+
+
+if __name__ == "__main__":
+    create_simple_dump()
+
+
+========================================
+FILE: deep_analyze.py
+========================================
+
+# deep_analyze.py
+import os
+from collections import defaultdict
+
+
+def analyze_project_structure():
+    # Count files by directory and extension
+    dir_counts = defaultdict(int)
+    ext_counts = defaultdict(int)
+    total_size_by_dir = defaultdict(int)
+    total_size_by_ext = defaultdict(int)
+
+    code_extensions = ('.py', '.yml', '.yaml', '.toml', '.cfg', '.ini')
+
+    print("Analyzing project structure...\n")
+
+    for root, dirs, files in os.walk('.'):
+        # Get the top-level directory
+        parts = root.split(os.sep)
+        if len(parts) > 1:
+            top_dir = parts[1]
+        else:
+            top_dir = "."
+
+        for file in files:
+            if any(file.endswith(ext) for ext in code_extensions):
+                filepath = os.path.join(root, file)
+                ext = os.path.splitext(file)[1]
+
+                try:
+                    size = os.path.getsize(filepath)
+                    dir_counts[top_dir] += 1
+                    ext_counts[ext] += 1
+                    total_size_by_dir[top_dir] += size
+                    total_size_by_ext[ext] += size
+                except:
+                    pass
+
+    print("Files by top-level directory:")
+    for dir_name, count in sorted(dir_counts.items(), key=lambda x: x[1], reverse=True)[:15]:
+        size_mb = total_size_by_dir[dir_name] / (1024 * 1024)
+        print(f"{dir_name:<30} {count:>6} files  {size_mb:>6.1f} MB")
+
+    print("\n\nFiles by extension:")
+    for ext, count in sorted(ext_counts.items(), key=lambda x: x[1], reverse=True):
+        size_mb = total_size_by_ext[ext] / (1024 * 1024)
+        print(f"{ext:<10} {count:>6} files  {size_mb:>6.1f} MB")
+
+    # Find suspicious directories
+    print("\n\nSuspicious directories (likely libraries):")
+    lib_indicators = ['site-packages', 'lib', 'Lib', 'include', 'Include', '__pycache__',
+                      'dist-packages', 'node_modules', '.eggs', 'build', 'dist']
+
+    for root, dirs, files in os.walk('.'):
+        for indicator in lib_indicators:
+            if indicator in root:
+                py_count = sum(1 for f in files if f.endswith('.py'))
+                if py_count > 10:
+                    print(f"{root}: {py_count} Python files")
+                break
+
+
+if __name__ == "__main__":
+    analyze_project_structure()
+

@@ -5,7 +5,7 @@ from sponsor_match.db import get_engine
 MODEL_DIR = pathlib.Path("models"); MODEL_DIR.mkdir(exist_ok=True)
 
 def train_kmeans(df, size_bucket: str):
-    coords = df[["lat", "lon"]].dropna().to_numpy()
+    coords = df[["lat","lon"]].to_numpy()
     km = MiniBatchKMeans(n_clusters=8, random_state=42, batch_size=256).fit(coords)
     joblib.dump(km, MODEL_DIR / f"kmeans_{size_bucket}.joblib")
 

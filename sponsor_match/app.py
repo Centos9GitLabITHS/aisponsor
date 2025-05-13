@@ -1,75 +1,66 @@
-# sponsor_match/app.py
-import streamlit as st, pandas as pd
-from pathlib import Path
+# sponsor_match/app.py  – v1.1 (handles blanks, adds map & nicer UX)
+import streamlit as st, pandas as pd, folium, pathlib
+from streamlit_folium import st_folium
+from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
 from sponsor_match.service import recommend
 
-# ──────────────────────────────────────────────
-# 1. Load clubs once per session
-# ──────────────────────────────────────────────
-DATA  = Path(__file__).resolve().parents[1] / "data" / "associations_goteborg.csv"
-clubs = pd.read_csv(DATA)          # may contain: name, lat, lon, (optionally) size_bucket
+DATA = pathlib.Path(__file__).parents[1] / "data" / "associations_goteborg_with_coords.csv"
+clubs = pd.read_csv(DATA).sort_values("name")
 
-# if the CSV has no size_bucket → derive a default (≤100 small, 101-500 medium, else large)
+# derive size bucket on-the-fly if column absent
 if "size_bucket" not in clubs.columns:
-    # feel free to tweak these thresholds later
-    EMP_COL = "members"           # change if you add a member-count column
-    if EMP_COL in clubs.columns:
-        bins   = [0, 100, 500, float("inf")]
-        labels = ["small", "medium", "large"]
-        clubs["size_bucket"] = pd.cut(clubs[EMP_COL], bins=bins, labels=labels)
-    else:
-        clubs["size_bucket"] = "small"   # fallback – mark everyone as small
-
-# tidy & sort
-clubs = clubs.sort_values("name").reset_index(drop=True)
-
-
-# ──────────────────────────────────────────────
-# 2.  UI  – choose club OR enter address
-# ──────────────────────────────────────────────
-c1, c2 = st.columns(2)
-with c1:
-    club_name = st.selectbox(
-        "Pick your association (optional)",
-        ["— choose —"] + clubs["name"].tolist(),
-        index=0,
+    clubs["size_bucket"] = pd.cut(
+        clubs["member_count"], [0, 100, 500, float("inf")],
+        labels=["small", "medium", "large"]
     )
-with c2:
-    free_addr = st.text_input("…or paste an address / post-code")
+
+st.set_page_config(page_title="⚽ SponsorMatch AI", layout="wide")
+st.title("Find matching sponsors in Göteborg")
+
+col1, col2 = st.columns(2)
+club_sel = col1.selectbox("Choose your club", ["— choose —", *clubs.name])
+addr_txt = col2.text_input("…or type an address / post-code in Göteborg")
+
+if club_sel != "— choose —":
+    default_bucket = clubs.loc[clubs.name == club_sel, "size_bucket"].iat[0]
+else:
+    default_bucket = "medium"
 
 size_bucket = st.selectbox(
-    "Association size",
-    ["small", "medium", "large"],
-    index=1 if club_name == "— choose —" else
-           ["small", "medium", "large"].index(
-               clubs.loc[clubs.name.eq(club_name), "size_bucket"].iloc[0]
-           )
-           if club_name != "— choose —" else 0
+    "Club size", ["small", "medium", "large"],
+    index=["small","medium","large"].index(default_bucket)
 )
 
 if st.button("Search"):
-    # ── Figure out coordinates ──────────────────
-    if club_name != "— choose —":
-        row = clubs.loc[clubs["name"] == club_name].iloc[0]
+    with st.spinner("Geocoding & matching…"):
+        # resolve coordinates
+        if club_sel != "— choose —":
+            row = clubs.loc[clubs.name == club_sel].iloc[0]
+            if pd.isna(row.lat) or pd.isna(row.lon):
+                st.error("That club is still missing coordinates – run build_associations_csv again.")
+                st.stop()
+            lat, lon = float(row.lat), float(row.lon)
+        else:
+            if not addr_txt:
+                st.warning("Enter an address or pick a club first.")
+                st.stop()
+            geo = RateLimiter(Nominatim(user_agent="sponsormatch").geocode)
+            loc = geo(addr_txt + ", Göteborg, Sweden")
+            if not loc:
+                st.error("Could not geocode that address.")
+                st.stop()
+            lat, lon = loc.latitude, loc.longitude
 
-        # adapt the keys below to *exactly* match your CSV headers
-        lat = float(row["lat"])  # or row["latitude"]
-        lon = float(row["lon"])  # or row["longitude"]
-    elif free_addr:
-        geo = Nominatim(user_agent="sponsormatch_demo").geocode(free_addr + ", Sweden")
-        if not geo:
-            st.error("Couldn’t geocode that address – try something else.")
-            st.stop()
-        lat, lon = geo.latitude, geo.longitude
-    else:
-        st.warning("Pick a club or enter an address first.")
-        st.stop()
-
-    # ── Call recommender ─────────────────────────
-    matches = recommend(lat, lon, size_bucket)
+        matches = recommend(lat, lon, size_bucket)
     if matches.empty:
-        st.info("No suitable companies found in this cluster yet.")
+        st.info("No matches yet for this cluster.")
     else:
-        st.subheader("Suggested sponsors")
-        st.dataframe(matches, use_container_width=True)
+        st.success(f"Top {len(matches)} suggested sponsors")
+        st.dataframe(matches)
+
+        m = folium.Map(location=[lat, lon], zoom_start=11)
+        folium.Marker([lat, lon], popup="Your club").add_to(m)
+        for _, r in matches.iterrows():
+            folium.Marker([r.lat, r.lon], popup=r.company_name).add_to(m)
+        st_folium(m, use_container_width=True)
