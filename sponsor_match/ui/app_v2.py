@@ -9,22 +9,22 @@ Usage:
 """
 
 import logging
-from pathlib import Path
-from typing import Optional, List, Dict
-
-import streamlit as st
 import pandas as pd
+import streamlit as st
+from streamlit_folium import st_folium
 import folium
 from folium.map import Popup
 from folium.plugins import MarkerCluster, HeatMap
-from streamlit_folium import st_folium
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
+import joblib
+from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
-
+from sponsor_match.core.config import config
 from sponsor_match.core.db import get_engine
 from sponsor_match.services.service_v2 import RecommendationRequest, SponsorMatchService  # :contentReference[oaicite:2]{index=2}:contentReference[oaicite:3]{index=3}
+from typing import Optional, List, Dict
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -154,9 +154,15 @@ class SponsorMatchUI:
             size_bucket=size_bucket,
             filters={"industries": industries, "max_distance": max_distance}
         )
-        service = SponsorMatchService(self.engine, models=None)
-        result = service.recommend(req)
+        cluster_models = {}
+        for bucket in ["small", "medium", "large"]:
+            model_path = Path(config.models_dir) / f"kmeans_{bucket}.joblib"
+            cluster_models[bucket] = joblib.load(model_path)
 
+        # pass them into the service
+        service = SponsorMatchService(self.engine, cluster_models=cluster_models)
+        # run the recommendation
+        result = service.recommend(req)
         # Store results
         df = result.companies
         st.session_state["results"] = df.to_dict("records")
