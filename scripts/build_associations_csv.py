@@ -16,6 +16,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Tuple, Optional
 
+import numpy as np
 import pandas as pd
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
@@ -54,7 +55,7 @@ def try_geocode(address: str, geocode: RateLimiter) -> Tuple[Optional[float], Op
 
 def main(input_csv: Path, output_csv: Path) -> None:
     """
-    Read associations from `input_csv`, geocode missing coordinates,
+    Read associations from `input_csv`, geocode all rows,
     recompute size_bucket, and write to `output_csv`.
     """
     if not input_csv.exists():
@@ -65,32 +66,26 @@ def main(input_csv: Path, output_csv: Path) -> None:
     df = pd.read_csv(input_csv)
 
     # ————— Column-normalization shim —————
-    # Ensure we have 'lat' and 'lon' columns, renaming common alternates
+    # If there is no lat/lon, inject them as NaN; otherwise rename common alternates
     if "lat" not in df.columns or "lon" not in df.columns:
+        # rename if alternate names present
         for (alt_lat, alt_lon) in [("latitude", "longitude"), ("Latitude", "Longitude")]:
             if alt_lat in df.columns and alt_lon in df.columns:
                 df = df.rename(columns={alt_lat: "lat", alt_lon: "lon"})
                 break
-    # Final sanity check
-    if "lat" not in df.columns or "lon" not in df.columns:
-        raise RuntimeError(
-            "build_associations_csv.py error: input CSV must have 'lat' & 'lon' columns; "
-            f"found {df.columns.tolist()}"
-        )
+        else:
+            # no lat/lon nor alternates → create empty columns
+            df["lat"] = np.nan
+            df["lon"] = np.nan
     # ————————————————————————————————
 
     # Prepare geocoder (1 req/sec, 10s timeout)
     geo = Nominatim(user_agent="sponsor_match_geo", timeout=10, scheme="https")
     geocode = RateLimiter(geo.geocode, min_delay_seconds=1.1)
 
-    # Identify rows needing geocoding
-    missing_mask = df["lat"].isna() | df["lon"].isna()
-    n_missing = missing_mask.sum()
-    logger.info("Found %d/%d rows without coordinates", n_missing, len(df))
-
-    # Geocode missing addresses
+    # Geocode every row (overwrites any existing coords)
     failures = []
-    for idx, row in df.loc[missing_mask].iterrows():
+    for idx, row in df.iterrows():
         lat, lon = try_geocode(row["address"], geocode)
         if lat is None:
             failures.append(row["address"])
