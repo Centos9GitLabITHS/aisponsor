@@ -27,6 +27,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 def try_geocode(address: str, geocode: RateLimiter) -> Tuple[Optional[float], Optional[float]]:
     """
     Attempt to geocode `address` using successive fallback strategies.
@@ -50,6 +51,7 @@ def try_geocode(address: str, geocode: RateLimiter) -> Tuple[Optional[float], Op
             return loc.latitude, loc.longitude
     return None, None
 
+
 def main(input_csv: Path, output_csv: Path) -> None:
     """
     Read associations from `input_csv`, geocode missing coordinates,
@@ -60,12 +62,12 @@ def main(input_csv: Path, output_csv: Path) -> None:
         raise SystemExit(1)
 
     logger.info("Loading %s", input_csv)
-
     df = pd.read_csv(input_csv)
+
     # ————— Column-normalization shim —————
-    # Ensure we have 'lat' and 'lon' columns, renaming common alternatives
+    # Ensure we have 'lat' and 'lon' columns, renaming common alternates
     if "lat" not in df.columns or "lon" not in df.columns:
-        for (alt_lat, alt_lon) in [("latitude", "longitude"), ("Latitude", "Longitude")]:
+        for alt_lat, alt_lon in [("latitude", "longitude"), ("Latitude", "Longitude")]:
             if alt_lat in df.columns and alt_lon in df.columns:
                 df = df.rename(columns={alt_lat: "lat", alt_lon: "lon"})
                 break
@@ -108,6 +110,7 @@ def main(input_csv: Path, output_csv: Path) -> None:
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_csv, index=False)
     logger.info("Wrote %d rows → %s", len(df), output_csv)
+
 
 if __name__ == "__main__":
     parser = ArgumentParser(
