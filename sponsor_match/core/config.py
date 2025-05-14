@@ -29,10 +29,9 @@ class Config:
     db_password: str = os.getenv("MYSQL_PASSWORD", "")
     db_name: str = os.getenv("MYSQL_DB", "sponsor_registry")
 
-    # Paths (relative to project root)
     project_root: Path = Path(__file__).resolve().parent.parent
-    data_dir: Path = field(default_factory=lambda: Config().project_root / "data")
-    models_dir: Path = field(default_factory=lambda: Config().project_root / "models")
+    data_dir: Path = project_root / "data"
+    models_dir: Path = project_root / "models"
 
     # KMeans parameters
     kmeans_clusters: int = int(os.getenv("KMENAS_CLUSTERS", "8"))
