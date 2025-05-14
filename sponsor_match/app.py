@@ -5,7 +5,7 @@ sponsor_match/app.py
 Streamlit app entrypoint for SponsorMatch AI (v1).
 
 Run with:
-    streamlit run sponsor_match/app.py
+    streamlit run sponsor_match/ui/app_v2.py
 """
 
 import logging
