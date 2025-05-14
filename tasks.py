@@ -23,4 +23,4 @@ def train(c):
 @task
 def app(c):
     """Launch the Streamlit application."""
-    c.run("streamlit run sponsor_match/app.py", pty=True)
+    c.run("streamlit run sponsor_match/app_v2.py", pty=True)
