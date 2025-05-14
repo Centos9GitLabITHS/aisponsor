@@ -67,7 +67,7 @@ def main(input_csv: Path, output_csv: Path) -> None:
     # ————— Column-normalization shim —————
     # Ensure we have 'lat' and 'lon' columns, renaming common alternates
     if "lat" not in df.columns or "lon" not in df.columns:
-        for alt_lat, alt_lon in [("latitude", "longitude"), ("Latitude", "Longitude")]:
+        for (alt_lat, alt_lon) in [("latitude", "longitude"), ("Latitude", "Longitude")]:
             if alt_lat in df.columns and alt_lon in df.columns:
                 df = df.rename(columns={alt_lat: "lat", alt_lon: "lon"})
                 break
