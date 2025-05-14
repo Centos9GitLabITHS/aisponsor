@@ -5,31 +5,16 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f27783fc-e02d-4d39-ad27-aca1d5896aaa" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/models/club_extended.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/models/entities.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/core/logger.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/services/recommendation.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/ui/app_v2.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tools/convert_all_xlsx_to_csv.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/analyze_text_files.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/streamlit_app.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/build/lib/sponsor_match/ingest_excel.py" beforeDir="false" afterPath="$PROJECT_DIR$/build/lib/sponsor_match/ingest_excel.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/create_simple_dump.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/bolag_1_500_sorted_with_year.xlsx" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/deep_analyze.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/project_dump_simple.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/build_associations_csv.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/build_associations_csv.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/clustering.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/db.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/db_init.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/db_init.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/features.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/features.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ingest_associations.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ingest_excel.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/service.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/train_matcher.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/train_matcher.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tasks.py" beforeDir="false" afterPath="$PROJECT_DIR$/tasks.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/lib/sponsor_match/clustering.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/lib/sponsor_match/db.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/lib/sponsor_match/features.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/lib/sponsor_match/ingest_associations.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/lib/sponsor_match/ingest_excel.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/lib/sponsor_match/service.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/lib/sponsor_match/train_matcher.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/associations_goteborg_with_coords.csv" beforeDir="false" afterPath="$PROJECT_DIR$/data/associations_goteborg_with_coords.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/app_v2.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/app_v2.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -63,9 +48,10 @@
     &quot;Python.analyze_text_files.executor&quot;: &quot;Run&quot;,
     &quot;Python.app.executor&quot;: &quot;Run&quot;,
     &quot;Python.create_simple_dump.executor&quot;: &quot;Run&quot;,
+    &quot;Python.deep_analyze.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;reorg-and-prune&quot;,
     &quot;last_opened_file_path&quot;: &quot;/home/bakri/PycharmProjects/SponsorMatchAI/data&quot;,
     &quot;settings.editor.selected.configurable&quot;: &quot;com.intellij.pycharm.community.ide.impl.configuration.PythonContentEntriesConfigurable&quot;
   }
@@ -78,7 +64,7 @@
       <recent name="$PROJECT_DIR$/sponsor_match/core" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.deep_analyze">
+  <component name="RunManager" selected="Python.analyze_text_files">
     <configuration name="analyze_text_files" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="SponsorMatchAI" />
       <option name="ENV_FILES" value="" />
@@ -169,9 +155,9 @@
     </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.analyze_text_files" />
         <item itemvalue="Python.deep_analyze" />
         <item itemvalue="Python.create_simple_dump" />
-        <item itemvalue="Python.analyze_text_files" />
         <item itemvalue="Python.app" />
       </list>
     </recent_temporary>
