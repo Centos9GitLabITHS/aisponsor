@@ -39,11 +39,8 @@ def train_kmeans_for_bucket(size_bucket: str) -> None:
     """
     logger.info("Loading companies in bucket '%s'", size_bucket)
     engine = get_engine()
-    df = pd.read_sql(
-        "SELECT lat, lon FROM companies WHERE size_bucket = :bucket",
-        engine,
-        params={"bucket": size_bucket}
-    )
+    sql = f"SELECT lat, lon FROM companies WHERE size_bucket = '{size_bucket}'"
+    df = pd.read_sql(sql, engine)
 
     coords = df.dropna(subset=["lat", "lon"]).to_numpy()
     if coords.size == 0:
