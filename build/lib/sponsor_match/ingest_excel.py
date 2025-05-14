@@ -1,5 +1,5 @@
 """
-sponsor_match/ingest_excel.py
+sponsor_match/ingest_csv.py
 ─────────────────────────────
 Loads the Excel file  data/bolag_1_500_sorted_with_year.xlsx
 into the MariaDB table  sponsor_registry.companies.
