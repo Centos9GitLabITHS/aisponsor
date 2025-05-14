@@ -60,7 +60,22 @@ def main(input_csv: Path, output_csv: Path) -> None:
         raise SystemExit(1)
 
     logger.info("Loading %s", input_csv)
+
     df = pd.read_csv(input_csv)
+    # ————— Column-normalization shim —————
+    # Ensure we have 'lat' and 'lon' columns, renaming common alternatives
+    if "lat" not in df.columns or "lon" not in df.columns:
+        for (alt_lat, alt_lon) in [("latitude", "longitude"), ("Latitude", "Longitude")]:
+            if alt_lat in df.columns and alt_lon in df.columns:
+                df = df.rename(columns={alt_lat: "lat", alt_lon: "lon"})
+                break
+    # Final sanity check
+    if "lat" not in df.columns or "lon" not in df.columns:
+        raise RuntimeError(
+            "build_associations_csv.py error: input CSV must have 'lat' & 'lon' columns; "
+            f"found {df.columns.tolist()}"
+        )
+    # ————————————————————————————————
 
     # Prepare geocoder (1 req/sec, 10s timeout)
     geo = Nominatim(user_agent="sponsor_match_geo", timeout=10, scheme="https")
