@@ -5,3 +5,4 @@ sponsor_match.egg-info/SOURCES.txt
 sponsor_match.egg-info/dependency_links.txt
 sponsor_match.egg-info/requires.txt
 sponsor_match.egg-info/top_level.txt
+tests/test_automated_suite.py

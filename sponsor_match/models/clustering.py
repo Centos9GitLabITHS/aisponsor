@@ -2,7 +2,7 @@
 """
 sponsor_match/models/clustering.py
 ----------------------------------
-Train MiniBatchKMeans models on company geocoordinates,
+Train MiniBatchKMeans models on club geocoordinates,
 one per size bucket, and persist them to disk.
 """
 
@@ -23,23 +23,15 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-# Ensure output directory exists
 MODEL_DIR: Path = config.models_dir
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 def train_kmeans_for_bucket(size_bucket: str) -> None:
-    """
-    Train a MiniBatchKMeans model on the latitude/longitude of all companies
-    in the given size_bucket, then save to models/kmeans_{size_bucket}.joblib.
-
-    Parameters
-    ----------
-    size_bucket : str
-        One of 'small', 'medium', 'large'.
-    """
-    logger.info("Loading companies in bucket '%s'", size_bucket)
+    logger.info("Loading clubs in bucket '%s'", size_bucket)
     engine = get_engine()
-    sql = f"SELECT lat, lon FROM companies WHERE size_bucket = '{size_bucket}'"
+
+    # Inline the bucket value for compatibility
+    sql = f"SELECT lat, lon FROM clubs WHERE size_bucket = '{size_bucket}'"
     df = pd.read_sql(sql, engine)
 
     coords = df.dropna(subset=["lat", "lon"]).to_numpy()
@@ -51,7 +43,7 @@ def train_kmeans_for_bucket(size_bucket: str) -> None:
         "Training MiniBatchKMeans (n_clusters=%d, batch_size=%d) on %d points",
         config.kmeans_clusters,
         config.kmeans_batch_size,
-        len(coords)
+        len(coords),
     )
     km = MiniBatchKMeans(
         n_clusters=config.kmeans_clusters,
@@ -65,9 +57,6 @@ def train_kmeans_for_bucket(size_bucket: str) -> None:
     logger.info("Saved KMeans model to %s", out_path)
 
 def main() -> None:
-    """
-    Train and save one KMeans model per size bucket.
-    """
     for bucket in ["small", "medium", "large"]:
         train_kmeans_for_bucket(bucket)
 

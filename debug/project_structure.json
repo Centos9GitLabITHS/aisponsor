@@ -1,0 +1,285 @@
+{
+  "sponsor_match/features.py": {
+    "functions": [
+      "calculate_distance_km",
+      "add_distance",
+      "bucket_assoc_size",
+      "make_pair_features",
+      "_size_score"
+    ],
+    "classes": [],
+    "imports": [
+      "from typing",
+      "numpy",
+      "pandas",
+      "from geopy.distance",
+      "from pandas"
+    ]
+  },
+  "sponsor_match/services/recommendation.py": {
+    "functions": [
+      "__init__",
+      "recommend"
+    ],
+    "classes": [
+      "RecommendationService"
+    ],
+    "imports": [
+      "logging",
+      "from typing",
+      "from sponsor_match.core.db",
+      "from sponsor_match.services.service_v2"
+    ]
+  },
+  "sponsor_match/services/service_v2.py": {
+    "functions": [
+      "__init__",
+      "_get_club_by_id",
+      "_find_matching_companies",
+      "_calculate_scores",
+      "recommend"
+    ],
+    "classes": [
+      "RecommendationRequest",
+      "RecommendationResult",
+      "SponsorMatchService"
+    ],
+    "imports": [
+      "logging",
+      "uuid",
+      "from dataclasses",
+      "from typing",
+      "pandas",
+      "numpy",
+      "from geopy.distance"
+    ]
+  },
+  "sponsor_match/cli/__init__.py": {
+    "functions": [],
+    "classes": [],
+    "imports": []
+  },
+  "sponsor_match/cli/train_matcher.py": {
+    "functions": [
+      "main"
+    ],
+    "classes": [],
+    "imports": [
+      "logging",
+      "from argparse",
+      "from pathlib",
+      "pandas",
+      "joblib",
+      "from sklearn.model_selection",
+      "from sklearn.ensemble",
+      "from sponsor_match.features"
+    ]
+  },
+  "sponsor_match/cli/db_init.py": {
+    "functions": [
+      "main"
+    ],
+    "classes": [],
+    "imports": [
+      "logging",
+      "from argparse",
+      "from textwrap",
+      "from sponsor_match.core.db"
+    ]
+  },
+  "sponsor_match/ui/app_v2.py": {
+    "functions": [
+      "main",
+      "__init__",
+      "_load_clubs",
+      "_marker_color",
+      "_club_popup",
+      "_company_popup",
+      "_radar_chart",
+      "_run_search",
+      "_render_recommendations",
+      "_render_analytics",
+      "_render_map",
+      "_render_insights",
+      "render_main_page"
+    ],
+    "classes": [
+      "SponsorMatchUI"
+    ],
+    "imports": [
+      "logging",
+      "from pathlib",
+      "joblib",
+      "pandas",
+      "plotly.express",
+      "plotly.graph_objects",
+      "streamlit",
+      "from folium",
+      "from folium.map",
+      "from folium.plugins",
+      "from streamlit_folium",
+      "from sponsor_match.core.config",
+      "from sponsor_match.core.db",
+      "from sponsor_match.services.service_v2"
+    ]
+  },
+  "sponsor_match/ui/__init__.py": {
+    "functions": [],
+    "classes": [],
+    "imports": []
+  },
+  "sponsor_match/core/config.py": {
+    "functions": [],
+    "classes": [
+      "Config"
+    ],
+    "imports": [
+      "os",
+      "from dataclasses",
+      "from pathlib",
+      "from dotenv"
+    ]
+  },
+  "sponsor_match/core/logger.py": {
+    "functions": [
+      "setup_logger"
+    ],
+    "classes": [],
+    "imports": [
+      "logging",
+      "sys",
+      "from pathlib"
+    ]
+  },
+  "sponsor_match/core/db.py": {
+    "functions": [
+      "get_engine"
+    ],
+    "classes": [],
+    "imports": [
+      "os",
+      "logging",
+      "from pathlib",
+      "from dotenv",
+      "from sqlalchemy",
+      "from sqlalchemy.engine",
+      "from sponsor_match.core.config"
+    ]
+  },
+  "sponsor_match/models/clustering.py": {
+    "functions": [
+      "train_kmeans_for_bucket",
+      "main"
+    ],
+    "classes": [],
+    "imports": [
+      "logging",
+      "from pathlib",
+      "joblib",
+      "pandas",
+      "from sklearn.cluster",
+      "from sponsor_match.core.db",
+      "from sponsor_match.core.config"
+    ]
+  },
+  "sponsor_match/models/club_extended.py": {
+    "functions": [],
+    "classes": [
+      "ExtendedClub"
+    ],
+    "imports": [
+      "from dataclasses",
+      "from typing"
+    ]
+  },
+  "sponsor_match/models/__init__.py": {
+    "functions": [],
+    "classes": [],
+    "imports": []
+  },
+  "sponsor_match/models/models.py": {
+    "functions": [
+      "__init__",
+      "train",
+      "predict_proba"
+    ],
+    "classes": [
+      "SponsorshipPredictorEnsemble"
+    ],
+    "imports": [
+      "logging",
+      "from typing",
+      "numpy",
+      "pandas",
+      "from sklearn.ensemble",
+      "from sklearn.neural_network",
+      "lightgbm"
+    ]
+  },
+  "sponsor_match/models/entities.py": {
+    "functions": [],
+    "classes": [
+      "Club",
+      "Company"
+    ],
+    "imports": [
+      "from dataclasses",
+      "from typing"
+    ]
+  },
+  "sponsor_match/models/features.py": {
+    "functions": [
+      "calculate_distance",
+      "calculate_size_match",
+      "calculate_industry_affinity",
+      "calculate_growth_rate",
+      "urban_rural_compatibility",
+      "create_features",
+      "_dist",
+      "_score",
+      "_affinity"
+    ],
+    "classes": [
+      "FeatureEngineer"
+    ],
+    "imports": [
+      "numpy",
+      "pandas",
+      "from datetime",
+      "from typing",
+      "from geopy.distance"
+    ]
+  },
+  "sponsor_match/data/__init__.py": {
+    "functions": [],
+    "classes": [],
+    "imports": []
+  },
+  "sponsor_match/data/ingest_associations.py": {
+    "functions": [
+      "main"
+    ],
+    "classes": [],
+    "imports": [
+      "logging",
+      "from argparse",
+      "from pathlib",
+      "pandas",
+      "from sqlalchemy"
+    ]
+  },
+  "sponsor_match/data/ingest_csv.py": {
+    "functions": [
+      "main"
+    ],
+    "classes": [],
+    "imports": [
+      "sys",
+      "logging",
+      "from pathlib",
+      "pandas",
+      "from sqlalchemy",
+      "from sponsor_match.core.db"
+    ]
+  }
+}

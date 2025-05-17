@@ -58,24 +58,58 @@ class SponsorMatchService:
         return df.iloc[0]
 
     def _find_matching_companies(
-        self, request: RecommendationRequest
+            self, request: RecommendationRequest
     ) -> pd.DataFrame:
         """
-        Pull all companies in the same size bucket, drop missing coords,
+        Pull all companies in the same size bucket, apply any filters,
         and optionally filter to the nearest cluster.
+
+        Supported filters:
+        - industries: list of industry names to include
+        - max_distance: maximum distance in kilometers
         """
+        # First, get all companies in the same size bucket
         firms = pd.read_sql(
             "SELECT * FROM companies WHERE size_bucket = :bucket",
             self.db,
             params={"bucket": request.size_bucket}
         )
+
+        # Drop companies without coordinates
         firms = firms.dropna(subset=["lat", "lon"]).reset_index(drop=True)
 
+        # Apply geographical clustering if model exists
         model = self.cluster_models.get(request.size_bucket)
         if model is not None:
-            # assign cluster label for the club’s location
-            label = int(model.predict([[request.lat, request.lon]])[0])
-            firms = firms.loc[model.labels_ == label].reset_index(drop=True)
+            # Correctly predict cluster for the club's location
+            club_cluster = int(model.predict([[request.lat, request.lon]])[0])
+
+            # Predict clusters for all companies
+            company_coords = firms[["lat", "lon"]].values
+            company_clusters = model.predict(company_coords)
+
+            # Keep only companies in the same cluster as the club
+            firms = firms[company_clusters == club_cluster].reset_index(drop=True)
+
+        # Apply industry filter if specified
+        if request.filters and request.filters.get("industries"):
+            industries = request.filters["industries"]
+            if industries:  # Only filter if the list is not empty
+                firms = firms[firms["industry"].isin(industries)]
+
+        # Calculate distances for all remaining companies
+        if firms.empty:
+            return firms
+
+        firms["dist_km"] = firms.apply(
+            lambda r: geodesic((r.lat, r.lon), (request.lat, request.lon)).km,
+            axis=1
+        )
+
+        # Apply maximum distance filter if specified
+        if request.filters and request.filters.get("max_distance"):
+            max_distance = request.filters["max_distance"]
+            firms = firms[firms["dist_km"] <= max_distance]
 
         return firms
 
@@ -148,4 +182,3 @@ class SponsorMatchService:
 
         metadata = {"request_id": str(uuid.uuid4())}
         return RecommendationResult(companies=result_df, scores=scores_dict, metadata=metadata)
-

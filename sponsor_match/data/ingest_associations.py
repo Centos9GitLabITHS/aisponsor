@@ -2,13 +2,15 @@
 """
 sponsor_match/data/ingest_associations.py
 -----------------------------------------
-Load an associations CSV (with lat/lon) into the `companies` table.
+Read a geocoded associations CSV and append into the `clubs` table.
 """
 
 import logging
 from argparse import ArgumentParser
-from sqlalchemy import create_engine
+from pathlib import Path
+
 import pandas as pd
+from sqlalchemy import create_engine
 
 # Configure logging
 logging.basicConfig(
@@ -17,50 +19,42 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def main(csv_path: str, db_url: str) -> None:
+def main(csv_path: Path, db_url: str | None) -> None:
+    # Determine DB URL (fallback to env if not passed)
+    url = db_url or None
+    if not url:
+        logger.error("No database URL provided. Use --db-url or set MYSQL_URL_OVERRIDE.")
+        raise SystemExit(1)
+
+    engine = create_engine(url)
+
+    # Read CSV
     logger.info("Reading %s", csv_path)
     df = pd.read_csv(csv_path)
     logger.info("Read %d rows from %s", len(df), csv_path)
 
-    engine = create_engine(db_url)
-    # Inspect existing
-    with engine.connect() as conn:
-        existing = pd.read_sql("SELECT COUNT(*) AS cnt FROM companies", conn)
-        total_before = int(existing["cnt"].iloc[0])
-    logger.info("companies table contains %d rows before", total_before)
+    # We're inserting into `clubs`, not `companies`
+    table_name = "clubs"
 
-    # Append new rows
-    df.to_sql("companies", engine, if_exists="append", index=False)
+    # Drop `id` if present; the clubs table has its own AUTO_INCREMENT primary key
+    if "id" in df.columns:
+        logger.info("Dropping 'id' column before insert into %s", table_name)
+        df = df.drop(columns=["id"])
 
-    # Count again
-    with engine.connect() as conn:
-        existing = pd.read_sql("SELECT COUNT(*) AS cnt FROM companies", conn)
-        total_after = int(existing["cnt"].iloc[0])
-    appended = total_after - total_before
-    logger.info("Appended %d rows to companies (now %d total)", appended, total_after)
-
+    # Write to clubs
+    logger.info("Writing %d rows into `%s`", len(df), table_name)
+    df.to_sql(table_name, engine, if_exists="append", index=False)
 
 if __name__ == "__main__":
-    p = ArgumentParser(description="Ingest associations CSV → companies table")
-    # allow both --csv-path and positional csv_path
+    p = ArgumentParser(description="Ingest geocoded associations into DB")
     p.add_argument(
-        "--csv-path", "-c",
-        dest="csv_path",
-        help="Path to associations CSV (with lat/lon)",
+        "--db-url", "-d", default="",
+        help="SQLAlchemy URL for your MySQL database"
     )
     p.add_argument(
-        "csv_path_pos", nargs="?",
-        help="(legacy) Path to associations CSV",
-    )
-    p.add_argument(
-        "--db-url", "-d",
-        dest="db_url",
-        required=True,
-        help="SQLAlchemy database URL",
+        "csv_path",
+        type=Path,
+        help="Path to geocoded associations CSV"
     )
     args = p.parse_args()
-
-    csv = args.csv_path or args.csv_path_pos
-    if not csv:
-        p.error("You must supply --csv-path or positional csv_path")
-    main(csv, args.db_url)
+    main(args.csv_path, args.db_url)

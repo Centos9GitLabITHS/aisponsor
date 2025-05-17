@@ -1,0 +1,59 @@
+2025-05-14 18:29:47,286 - __main__ - INFO - ============================================================
+2025-05-14 18:29:47,286 - __main__ - INFO - STEP 1: Testing Configuration and Database Connection
+2025-05-14 18:29:47,286 - __main__ - INFO - ============================================================
+2025-05-14 18:29:47,290 - __main__ - INFO - Config imported successfully
+2025-05-14 18:29:47,290 - __main__ - ERROR - ✗ Database Connection failed: type object 'Config' has no attribute 'MYSQL_URL'
+2025-05-14 18:29:47,291 - __main__ - INFO - ============================================================
+2025-05-14 18:29:47,291 - __main__ - INFO - STEP 2: Testing Entity Loading
+2025-05-14 18:29:47,291 - __main__ - INFO - ============================================================
+2025-05-14 18:29:47,448 - sponsor_match.core.db - DEBUG - Creating DB engine with URL: mysql+mysqlconnector://sponsor_user:Sports-2025?!@localhost:3306/sponsor_registry
+2025-05-14 18:29:47,473 - __main__ - ERROR - ✗ Entity Loading failed: Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>.
+2025-05-14 18:29:47,476 - __main__ - INFO - ============================================================
+2025-05-14 18:29:47,476 - __main__ - INFO - STEP 3: Testing Service Layer
+2025-05-14 18:29:47,476 - __main__ - INFO - ============================================================
+2025-05-14 18:29:47,531 - __main__ - ERROR - ✗ Service Layer failed: SponsorMatchService.__init__() missing 2 required positional arguments: 'db_engine' and 'cluster_models'
+2025-05-14 18:29:47,531 - __main__ - INFO - ============================================================
+2025-05-14 18:29:47,531 - __main__ - INFO - STEP 4: Testing Distance Calculation
+2025-05-14 18:29:47,531 - __main__ - INFO - ============================================================
+2025-05-14 18:29:47,531 - __main__ - INFO - Using calculate_distance_km from features module
+2025-05-14 18:29:47,531 - __main__ - INFO - Calculated distance: 1.28 km
+2025-05-14 18:29:47,531 - __main__ - INFO - ✓ Distance Calculation completed successfully
+2025-05-14 18:29:47,531 - __main__ - INFO - ============================================================
+2025-05-14 18:29:47,531 - __main__ - INFO - STEP 5: Testing Search/Recommendation Functionality
+2025-05-14 18:29:47,531 - __main__ - INFO - ============================================================
+2025-05-14 18:29:47,531 - sponsor_match.core.db - DEBUG - Creating DB engine with URL: mysql+mysqlconnector://sponsor_user:Sports-2025?!@localhost:3306/sponsor_registry
+2025-05-14 18:29:47,532 - __main__ - ERROR - ✗ Search Functionality failed: Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>.
+2025-05-14 18:29:47,533 - __main__ - INFO - ============================================================
+2025-05-14 18:29:47,533 - __main__ - INFO - STEP 6: Testing UI Integration
+2025-05-14 18:29:47,533 - __main__ - INFO - ============================================================
+2025-05-14 18:29:48,137 - sponsor_match.core.db - DEBUG - Creating DB engine with URL: mysql+mysqlconnector://sponsor_user:Sports-2025?!@localhost:3306/sponsor_registry
+2025-05-14 18:29:48,140 - mysql.connector - DEBUG - Building SSL context
+2025-05-14 18:29:48,147 - mysql.connector - DEBUG - Switching to SSL
+2025-05-14 18:29:48,150 - mysql.connector - DEBUG - SSL has been enabled
+2025-05-14 18:29:48,150 - mysql.connector - DEBUG - Starting authorization phase
+2025-05-14 18:29:48,150 - mysql.connector - DEBUG - The provided initial strategy is mysql_native_password
+2025-05-14 18:29:48,150 - mysql.connector - INFO - package: mysql.connector.plugins
+2025-05-14 18:29:48,150 - mysql.connector - INFO - plugin_name: mysql_native_password
+2025-05-14 18:29:48,151 - mysql.connector - INFO - AUTHENTICATION_PLUGIN_CLASS: MySQLNativePasswordAuthPlugin
+2025-05-14 18:29:48,151 - mysql.connector - DEBUG - mysql_native_password completed succesfully
+2025-05-14 18:29:48,158 - __main__ - INFO - UI instance created
+2025-05-14 18:29:48,158 - __main__ - INFO - UI methods: ['clubs_df', 'engine', 'render_main_page']
+2025-05-14 18:29:48,158 - __main__ - INFO - ✓ UI Integration completed successfully
+2025-05-14 18:29:48,158 - __main__ - INFO - ============================================================
+2025-05-14 18:29:48,158 - __main__ - INFO - DEBUG REPORT SUMMARY
+2025-05-14 18:29:48,158 - __main__ - INFO - ============================================================
+2025-05-14 18:29:48,158 - __main__ - INFO - Successful steps: 2
+2025-05-14 18:29:48,158 - __main__ - INFO - Failed steps: 4
+2025-05-14 18:29:48,158 - __main__ - ERROR - 
+Failed steps:
+2025-05-14 18:29:48,158 - __main__ - ERROR -   - Database Connection: type object 'Config' has no attribute 'MYSQL_URL'
+2025-05-14 18:29:48,158 - __main__ - ERROR -   - Entity Loading: Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>.
+2025-05-14 18:29:48,158 - __main__ - ERROR -   - Service Layer: SponsorMatchService.__init__() missing 2 required positional arguments: 'db_engine' and 'cluster_models'
+2025-05-14 18:29:48,158 - __main__ - ERROR -   - Search Functionality: Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>.
+2025-05-14 18:29:48,159 - __main__ - INFO - 
+Detailed report saved to: /home/bakri/PycharmProjects/SponsorMatchAI/debug/debug_report_20250514_182948.json
+2025-05-14 18:29:48,159 - __main__ - INFO - Log file: /home/bakri/PycharmProjects/SponsorMatchAI/debug/search_debug_20250514_182947.log
+2025-05-14 18:29:48,159 - __main__ - ERROR - 
+Diagnosis: The search issue appears to be in the following areas:
+2025-05-14 18:29:48,159 - __main__ - ERROR - - Service layer: Check the service methods and their parameters
+2025-05-14 18:29:48,159 - __main__ - ERROR - - Search functionality: The matching/recommendation logic might have issues
