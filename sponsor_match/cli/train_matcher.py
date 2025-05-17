@@ -21,7 +21,7 @@ import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import GradientBoostingClassifier
 
-from sponsor_match.features import make_pair_features
+from sponsor_match.models.features import FeatureEngineer
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ def main(
     logger.info("Data contains %d rows", len(df))
 
     logger.info("Creating pairwise features")
-    X = make_pair_features(df)
+    X = FeatureEngineer.make_pair_features(df)
     y = df["label"]
 
     logger.info(

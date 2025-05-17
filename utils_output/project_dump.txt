@@ -1,0 +1,4552 @@
+================================================================================
+FIL: pyproject.toml
+================================================================================
+
+[project]
+name = "sponsor_match"
+version = "0.1.0"
+
+[project.optional-dependencies]
+dev = [
+    "pandas>=2.2",
+    "numpy>=2.2",
+    "scikit-learn>=1.6",
+    "joblib>=1.5",
+    "threadpoolctl>=3.6",
+    "python-dotenv>=1.1",
+    "mysql-connector-python>=9.3",
+    "geopy>=2.4",
+]
+
+[tool.setuptools]
+packages = ["sponsor_match"]
+
+
+================================================================================
+FIL: tasks.py
+================================================================================
+
+from invoke import task
+
+@task
+def setup(c):
+    """Install package and development dependencies."""
+    c.run("pip install -e '.[dev]'")
+
+@task
+def data(c):
+    """Run data ingestion pipelines."""
+    # Build associations CSV with coordinates
+    c.run("python -m scripts.build_associations_csv data/associations_goteborg.csv")
+    # Ingest company data from CSV
+    c.run("python -m sponsor_match.data.ingest_csv")
+    # Ingest club associations into the database
+    c.run("python -m sponsor_match.data.ingest_associations data/associations_goteborg_with_coords.csv")
+
+@task
+def train(c):
+    """Train K-Means clustering models."""
+    c.run("python -m sponsor_match.models.clustering")
+
+@task
+def train_classifier(c):
+    """Train the ML-based matching model."""
+    c.run("python -m sponsor_match.cli.train_matcher")
+
+@task
+def app(c):
+    """Launch the Streamlit application."""
+    c.run("streamlit run sponsor_match/ui/app_v2.py", pty=True)
+
+
+================================================================================
+FIL: tests/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: tests/conftest.py
+================================================================================
+
+# tests/conftest.py
+from pathlib import Path
+
+import pytest
+
+
+# No sys.path manipulation needed when package is properly installed
+
+@pytest.fixture
+def test_data_dir():
+    """Provides path to test data directory"""
+    return Path(__file__).parent / "test_data"
+
+
+@pytest.fixture
+def sample_companies_df():
+    """Creates a sample companies DataFrame for testing"""
+    import pandas as pd
+    return pd.DataFrame({
+        'id': [1, 2, 3],
+        'name': ['Tech AB', 'Sport Goods Ltd', 'Local Market'],
+        'size': ['medium', 'large', 'small'],
+        'employees': [50, 200, 10],
+        'turnover': [5000000, 20000000, 500000],
+        'latitude': [57.7089, 57.7200, 57.6900],
+        'longitude': [11.9746, 11.9800, 11.9600]
+    })
+
+
+@pytest.fixture
+def real_companies_df():
+    """Loads real company data from CSV file"""
+    import pandas as pd
+    csv_path = Path(__file__).parent.parent / "data" / "bolag_1_500_sorted_with_year.csv"
+
+    df = pd.read_csv(csv_path)
+
+    # Rename columns to match expected field names in the application
+    column_mapping = {
+        'Företagsnamn': 'name',
+        'Postadress': 'address',
+        'Omsättning (tkr)': 'revenue_ksek',
+        'Anställda': 'employees',
+        'År': 'year'
+    }
+
+    df = df.rename(columns=column_mapping)
+    return df
+
+
+@pytest.fixture
+def real_clubs_df():
+    """Loads real club data from CSV file"""
+    import pandas as pd
+    csv_path = Path(__file__).parent.parent / "data" / "associations_goteborg_with_coords.csv"
+    return pd.read_csv(csv_path)
+
+
+================================================================================
+FIL: tests/manual_test_checklist.py
+================================================================================
+
+# tests/manual_test_checklist.py
+"""
+Manual Testing Checklist for SponsorMatchAI
+
+This script provides a structured approach to manually test each component
+of the application. It's like a doctor's checklist - we check vital signs
+one by one to diagnose where the problem lies.
+
+Usage: python tests/manual_test_checklist.py
+"""
+
+import sys
+from pathlib import Path
+from datetime import datetime
+import os
+
+# Add the project root to Python path so we can import our modules
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+
+# Color codes for terminal output to make results easy to read
+class Colors:
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    END = '\033[0m'
+
+
+def print_header(test_name, test_number):
+    """Print a formatted header for each test"""
+    print(f"\n{Colors.BLUE}{'=' * 60}")
+    print(f"TEST {test_number}: {test_name}")
+    print(f"{'=' * 60}{Colors.END}")
+
+
+def print_instruction(instruction):
+    """Print instructions for manual testing"""
+    print(f"{Colors.YELLOW}➤ {instruction}{Colors.END}")
+
+
+def print_success(message):
+    """Print success message"""
+    print(f"{Colors.GREEN}✓ {message}{Colors.END}")
+
+
+def print_failure(message):
+    """Print failure message"""
+    print(f"{Colors.RED}✗ {message}{Colors.END}")
+
+
+def wait_for_user():
+    """Wait for user to press Enter"""
+    input("\nPress Enter to continue...")
+
+
+# Test 1: Environment and Dependencies
+def test_environment():
+    """
+    Check if the Python environment is properly set up.
+    This is like checking if all your tools are in the toolbox.
+    """
+    print_header("Environment and Dependencies Check", 1)
+
+    print_instruction("Checking Python version...")
+    import platform
+    python_version = platform.python_version()
+    print(f"Python version: {python_version}")
+
+    # Check if version is 3.8 or higher
+    major, minor = map(int, python_version.split('.')[:2])
+    if major >= 3 and minor >= 8:
+        print_success("Python version is compatible")
+    else:
+        print_failure(f"Python {python_version} might be too old. Consider upgrading to 3.8+")
+
+    print_instruction("Checking required packages...")
+    required_packages = [
+        'streamlit',
+        'pandas',
+        'mysql-connector-python',
+        'python-dotenv',
+        'numpy',
+        'sklearn',
+        'sqlalchemy',
+        'folium',
+        'streamlit-folium'
+    ]
+
+    missing_packages = []
+    for package in required_packages:
+        try:
+            if package == 'mysql-connector-python':
+                __import__('mysql.connector')
+            elif package == 'sklearn':
+                __import__('sklearn')
+            else:
+                __import__(package.replace('-', '_'))
+            print_success(f"{package} is installed")
+        except ImportError:
+            print_failure(f"{package} is NOT installed")
+            missing_packages.append(package)
+
+    if missing_packages:
+        print(f"\n{Colors.YELLOW}To install missing packages, run:")
+        print(f"pip install {' '.join(missing_packages)}{Colors.END}")
+
+    wait_for_user()
+
+
+# Test 2: Check Project Structure
+def test_project_structure():
+    """
+    Verify that the expected project structure exists.
+    This helps us understand what modules are actually available.
+    """
+    print_header("Project Structure Check", 2)
+
+    expected_paths = [
+        "sponsor_match/core/config.py",
+        "sponsor_match/core/db.py",
+        "sponsor_match/models/entities.py",
+        "sponsor_match/services/service_v2.py",
+        "sponsor_match/ui/app_v2.py",
+        "sponsor_match/data/ingest_associations.py",
+    ]
+
+    # Note: __init__.py might not exist in every directory
+    optional_paths = [
+        "sponsor_match/__init__.py",
+    ]
+
+    all_found = True
+    for path in expected_paths:
+        full_path = project_root / path
+        if full_path.exists():
+            print_success(f"Found: {path}")
+        else:
+            print_failure(f"Missing: {path}")
+            all_found = False
+
+    for path in optional_paths:
+        full_path = project_root / path
+        if full_path.exists():
+            print_success(f"Found (optional): {path}")
+        else:
+            print(f"{Colors.YELLOW}Optional file missing: {path}{Colors.END}")
+
+    if all_found:
+        print_success("\nAll required files are present!")
+    else:
+        print_failure("\nSome required files are missing. Check your project structure.")
+
+    wait_for_user()
+
+
+# Test 3: Database Configuration and Connection
+def test_database_config():
+    """
+    Test the database configuration and connection.
+    This ensures we can talk to our data storage.
+    """
+    print_header("Database Configuration Test", 3)
+
+    try:
+        print_instruction("Importing configuration...")
+        from sponsor_match.core.config import Config
+        print_success("Config imported successfully")
+
+        print_instruction("Checking configuration attributes...")
+        config_attrs = [attr for attr in dir(Config) if not attr.startswith('_')]
+        print(f"Config attributes: {', '.join(config_attrs)}")
+
+        # Look for database-related configuration
+        db_attrs = [attr for attr in config_attrs if 'DB' in attr or 'DATABASE' in attr or 'MYSQL' in attr]
+        if db_attrs:
+            print_success(f"Found database config: {', '.join(db_attrs)}")
+        else:
+            print_failure("No database configuration attributes found")
+
+        print_instruction("\nTesting database connection...")
+        from sponsor_match.core.db import get_engine
+        from sqlalchemy import text
+
+        try:
+            engine = get_engine()
+            print_success("Database engine created successfully")
+
+            # Test actual connection with proper SQLAlchemy 2.0 syntax
+            with engine.connect() as conn:
+                result = conn.execute(text("SELECT VERSION()"))
+                version = result.fetchone()[0]
+                print_success(f"Connected to MySQL version: {version}")
+
+                # Check tables
+                result = conn.execute(text("SHOW TABLES"))
+                tables = [row[0] for row in result]
+                print(f"\nTables found: {len(tables)}")
+                for table in tables:
+                    print(f"  - {table}")
+
+        except Exception as e:
+            print_failure(f"Database connection failed: {e}")
+            print("\nTroubleshooting steps:")
+            print("1. Check if MySQL is running")
+            print("2. Check your database credentials")
+            print("3. Ensure the database exists")
+
+    except ImportError as e:
+        print_failure(f"Import error: {e}")
+        print("Check if the module paths are correct")
+    except Exception as e:
+        print_failure(f"Configuration test failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+    wait_for_user()
+
+
+# Test 4: Entity Models (Dataclasses)
+def test_entity_models():
+    """
+    Test that the entity models (Club and Company) are properly defined.
+    These are the core data structures of your application.
+    """
+    print_header("Entity Models Test", 4)
+
+    try:
+        print_instruction("Importing entity models...")
+        from sponsor_match.models.entities import Club, Company
+        print_success("Entities imported successfully")
+
+        print_instruction("\nChecking Club model structure...")
+        # Check if it's a dataclass or regular class
+        if hasattr(Club, '__dataclass_fields__'):
+            print_success("Club is a dataclass")
+            fields = Club.__dataclass_fields__.keys()
+            print(f"Club fields: {', '.join(fields)}")
+        else:
+            # It's a regular class with required parameters
+            print("Club is a regular class")
+            # Try to inspect the __init__ method
+            import inspect
+            sig = inspect.signature(Club.__init__)
+            params = [p for p in sig.parameters.keys() if p != 'self']
+            print(f"Club parameters: {', '.join(params)}")
+
+        print_instruction("\nChecking Company model structure...")
+        if hasattr(Company, '__dataclass_fields__'):
+            print_success("Company is a dataclass")
+            fields = Company.__dataclass_fields__.keys()
+            print(f"Company fields: {', '.join(fields)}")
+        else:
+            print("Company is a regular class")
+            sig = inspect.signature(Company.__init__)
+            params = [p for p in sig.parameters.keys() if p != 'self']
+            print(f"Company parameters: {', '.join(params)}")
+
+        # Since these aren't SQLAlchemy models, we can't query them directly
+        print_instruction("\nTesting data loading through table queries...")
+        from sponsor_match.core.db import get_engine
+        from sqlalchemy import text*
+
+        engine = get_engine()
+        with engine.connect() as conn:
+            # Query clubs table directly
+            result = conn.execute(text("SELECT COUNT(*) FROM clubs"))
+            club_count = result.scalar()
+            print_success(f"Found {club_count} clubs in database")
+
+            # Query companies table directly
+            result = conn.execute(text("SELECT COUNT(*) FROM companies"))
+            company_count = result.scalar()
+            print_success(f"Found {company_count} companies in database")
+
+            # Get sample data
+            if club_count > 0:
+                result = conn.execute(text("SELECT name FROM clubs LIMIT 1"))
+                sample_club = result.fetchone()
+                print(f"Sample club: {sample_club[0]}")
+
+            if company_count > 0:
+                result = conn.execute(text("SELECT name FROM companies LIMIT 1"))
+                sample_company = result.fetchone()
+                print(f"Sample company: {sample_company[0]}")
+
+    except Exception as e:
+        print_failure(f"Entity models test failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+    wait_for_user()
+
+
+# Test 5: Distance Calculation
+def test_distance_calculation():
+    """
+    Test the distance calculation functionality.
+    This is crucial for finding nearby sponsors.
+    """
+    print_header("Distance Calculation Test", 5)
+
+    try:
+        # The distance function exists in features module
+        print_instruction("Importing distance calculation function...")
+        from sponsor_match.models.features import FeatureEngineer calculate_distance_km
+        print_success("Found calculate_distance_km in features module")
+
+        print_instruction("\nTesting distance calculation with known points...")
+
+        # Gothenburg city center
+        lat1, lon1 = 57.7089, 11.9746
+        # Nearby location (about 1.3 km away)
+        lat2, lon2 = 57.7200, 11.9800
+
+        distance = FeatureEngineer.FeatureEngineer.calculate_distance_km(lat1, lon1, lat2, lon2)
+
+        print(f"Point 1: ({lat1}, {lon1}) - City center")
+        print(f"Point 2: ({lat2}, {lon2})")
+        print(f"Calculated distance: {distance:.2f} km")
+
+        # Verify the result is reasonable
+        if 1.0 <= distance <= 1.5:
+            print_success("Distance calculation seems correct!")
+        else:
+            print_failure(f"Distance {distance:.2f} km seems incorrect (expected ~1.3 km)")
+
+    except Exception as e:
+        print_failure(f"Distance calculation test failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+    wait_for_user()
+
+
+# Test 6: Service Layer
+def test_service_layer():
+    """
+    Test the service layer that handles the business logic.
+    This is where the matching actually happens.
+    """
+    print_header("Service Layer Test", 6)
+
+    try:
+        print_instruction("Importing SponsorMatchService...")
+        from sponsor_match.services.service_v2 import SponsorMatchService
+        print_success("SponsorMatchService imported successfully")
+
+        print_instruction("\nUnderstanding service requirements...")
+        import inspect
+        sig = inspect.signature(SponsorMatchService.__init__)
+        params = [p for p in sig.parameters.keys() if p != 'self']
+        print(f"SponsorMatchService requires: {', '.join(params)}")
+
+        print_instruction("\nCreating service with required parameters...")
+        from sponsor_match.core.db import get_engine
+
+        # The service needs db_engine and cluster_models
+        engine = get_engine()
+
+        # Check if cluster models are available
+        try:
+            # This is likely where the trained models are stored
+            import pickle
+            import os
+
+            models_dir = project_root / "models" / "clusters"
+            if models_dir.exists():
+                cluster_models = {}
+                for model_file in models_dir.glob("*.pkl"):
+                    with open(model_file, 'rb') as f:
+                        size = model_file.stem  # e.g., 'small', 'medium', 'large'
+                        cluster_models[size] = pickle.load(f)
+                print_success(f"Loaded {len(cluster_models)} cluster models")
+            else:
+                print_failure("Cluster models directory not found")
+                cluster_models = {}  # Empty dict for testing
+        except Exception as e:
+            print(f"Could not load cluster models: {e}")
+            cluster_models = {}
+
+        # Create service instance
+        service = SponsorMatchService(db_engine=engine, cluster_models=cluster_models)
+        print_success("Service instance created successfully")
+
+        # Check available methods
+        methods = [method for method in dir(service) if not method.startswith('_')]
+        print(f"\nAvailable service methods: {', '.join(methods)}")
+
+    except Exception as e:
+        print_failure(f"Service layer test failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+    wait_for_user()
+
+
+# Test 7: Streamlit Interface
+def test_streamlit_interface():
+    """
+    Test the Streamlit web interface.
+    This checks if the UI can be imported and initialized.
+    """
+    print_header("Streamlit Interface Test", 7)
+
+    try:
+        print_instruction("Importing Streamlit UI...")
+        from sponsor_match.ui.app_v2 import SponsorMatchUI
+        print_success("SponsorMatchUI imported successfully")
+
+        print_instruction("\nCreating UI instance...")
+        ui = SponsorMatchUI()
+        print_success("UI instance created")
+
+        print_instruction("\nChecking UI attributes and methods...")
+        # The UI has these attributes based on the test output
+        attrs = [attr for attr in dir(ui) if not attr.startswith('_')]
+        print(f"UI attributes/methods: {', '.join(attrs)}")
+
+        # Check specific attributes we saw in the test output
+        expected_attrs = ['clubs_df', 'engine', 'render_main_page']
+        for attr in expected_attrs:
+            if hasattr(ui, attr):
+                print_success(f"Found expected attribute: {attr}")
+            else:
+                print_failure(f"Missing expected attribute: {attr}")
+
+        print("\nTo fully test the interface:")
+        print("1. Open a new terminal")
+        print("2. Run: streamlit run sponsor_match/ui/app_v2.py")
+        print("3. Check for any error messages")
+        print("4. Try using the filters and search functionality")
+
+    except ImportError as e:
+        print_failure(f"Could not import Streamlit UI: {str(e)}")
+    except Exception as e:
+        print_failure(f"Streamlit interface test failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+    wait_for_user()
+
+
+# Main test runner
+def main():
+    """
+    Run all tests in sequence.
+    This gives you a complete health check of your application.
+    """
+    print(f"{Colors.GREEN}SponsorMatchAI Manual Test Suite")
+    print(f"{'=' * 60}{Colors.END}")
+    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+    tests = [
+        test_environment,
+        test_project_structure,
+        test_database_config,
+        test_entity_models,
+        test_distance_calculation,
+        test_service_layer,
+        test_streamlit_interface,
+    ]
+
+    for i, test in enumerate(tests, 1):
+        try:
+            test()
+        except KeyboardInterrupt:
+            print(f"\n{Colors.YELLOW}Test suite interrupted by user{Colors.END}")
+            break
+        except Exception as e:
+            print(f"{Colors.RED}Test {i} crashed: {str(e)}{Colors.END}")
+            import traceback
+            traceback.print_exc()
+            continue
+
+    print(f"\n{Colors.GREEN}Test suite completed!")
+    print(f"Finished at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{Colors.END}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: tests/test_automated_suite.py
+================================================================================
+
+# tests/test_automated_suite.py
+"""
+Automated Test Suite for SponsorMatchAI
+
+This test suite uses pytest to automatically verify all components of the application.
+Since your entities are dataclasses (not SQLAlchemy models), we need to test
+database queries differently.
+
+To run: pytest tests/test_automated_suite.py -v
+"""
+
+import pytest
+import sys
+from pathlib import Path
+from sponsor_match.models.features import FeatureEngineer
+from unittest.mock import Mock
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+
+class TestDatabaseConnection:
+    """Test database connectivity and basic operations"""
+
+    def test_database_engine_creation(self):
+        """Test that we can create a database engine"""
+        from sponsor_match.core.db import get_engine
+
+        engine = get_engine()
+        assert engine is not None
+        assert 'mysql' in str(engine.url)
+
+    def test_database_connection(self):
+        """Test actual database connection"""
+        from sponsor_match.core.db import get_engine
+        from sqlalchemy import text
+
+        engine = get_engine()
+        with engine.connect() as conn:
+            # Use text() for raw SQL in SQLAlchemy 2.0
+            result = conn.execute(text("SELECT 1"))
+            assert result.scalar() == 1
+
+    def test_table_queries(self):
+        """Test querying tables directly since entities aren't ORM models"""
+        from sponsor_match.core.db import get_engine
+        from sqlalchemy import text
+
+        engine = get_engine()
+        with engine.connect() as conn:
+            # Test clubs table
+            result = conn.execute(text("SELECT COUNT(*) FROM clubs"))
+            club_count = result.scalar()
+            assert club_count >= 0
+
+            # Test companies table
+            result = conn.execute(text("SELECT COUNT(*) FROM companies"))
+            company_count = result.scalar()
+            assert company_count >= 0
+
+
+class TestDistanceCalculation:
+    """Test the geographic distance calculation functionality"""
+
+    def test_distance_calculation_features(self):
+        """Test distance calculation from features module"""
+        # No need to import FeatureEngineer here, it's already at the top level
+
+        # Test same location
+        distance = FeatureEngineer.calculate_distance_km(57.7089, 11.9746, 57.7089, 11.9746)
+        assert distance == 0
+
+        # Test known distance
+        distance = FeatureEngineer.calculate_distance_km(57.7089, 11.9746, 57.7200, 11.9800)
+        assert 1.2 <= distance <= 1.4
+
+    def test_distance_with_invalid_inputs(self):
+        """Test distance calculation with edge cases"""
+        # Test with zero values instead of None
+        with pytest.raises(Exception):
+            FeatureEngineer.calculate_distance_km(-1.0, 11.9746, 57.7200, 11.9800)
+
+
+class TestServiceLayer:
+    """Test the service layer functionality"""
+
+    @pytest.fixture
+    def mock_engine(self):
+        """Create a mock database engine"""
+        return Mock()
+
+    @pytest.fixture
+    def mock_cluster_models(self):
+        """Create mock cluster models"""
+        return {
+            'small': Mock(),
+            'medium': Mock(),
+            'large': Mock()
+        }
+
+    def test_service_creation(self, mock_engine, mock_cluster_models):
+        """Test that service can be instantiated with required parameters"""
+        from sponsor_match.services.service_v2 import SponsorMatchService
+
+        service = SponsorMatchService(
+            db_engine=mock_engine,
+            cluster_models=mock_cluster_models
+        )
+        assert service is not None
+        assert service.db == mock_engine  # Changed from db_engine to db
+        assert service.cluster_models == mock_cluster_models
+
+    def test_service_methods(self, mock_engine, mock_cluster_models):
+        """Test service methods exist"""
+        from sponsor_match.services.service_v2 import SponsorMatchService
+
+        service = SponsorMatchService(
+            db_engine=mock_engine,
+            cluster_models=mock_cluster_models
+        )
+
+        # Check for expected methods (note the leading underscore in _get_club_by_id)
+        assert hasattr(service, '_get_club_by_id')  # Changed from get_club_by_id
+        assert hasattr(service, 'recommend')
+
+
+class TestModels:
+    """Test the model classes (dataclasses)"""
+
+    def test_club_entity_structure(self):
+        """Test Club entity structure"""
+        from sponsor_match.models.entities import Club
+
+        # Test creating a club with all required parameters
+        club = Club(
+            id=1,
+            name="Test FC",
+            member_count=100,
+            address="Test Street 1",
+            lat=57.7089,
+            lon=11.9746,
+            size_bucket="medium",
+            founded_year=2000
+        )
+
+        assert club.id == 1
+        assert club.name == "Test FC"
+        assert club.lat == 57.7089
+
+    def test_company_entity_structure(self):
+        """Test Company entity structure"""
+        from sponsor_match.models.entities import Company
+
+        # Test creating a company with all required parameters
+        company = Company(
+            id=1,
+            orgnr="123456-7890",
+            name="Test Company",
+            revenue_ksek=1000,
+            employees=50,
+            year=2023,
+            size_bucket="medium",
+            lat=57.7089,
+            lon=11.9746,
+            industry="Technology"
+        )
+
+        assert company.id == 1
+        assert company.name == "Test Company"
+        assert company.size_bucket == "medium"
+
+    def test_feature_engineer(self):
+        """Test FeatureEngineer if available"""
+        try:
+            from sponsor_match.models.features import FeatureEngineer
+
+            engineer = FeatureEngineer()
+            # Just check it can be instantiated
+            assert engineer is not None
+        except ImportError:
+            pytest.skip("FeatureEngineer not available")
+
+
+class TestUI:
+    """Test the UI components"""
+
+    def test_ui_import(self):
+        """Test that UI can be imported"""
+        from sponsor_match.ui.app_v2 import SponsorMatchUI
+
+        ui = SponsorMatchUI()
+        assert ui is not None
+
+    def test_ui_attributes(self):
+        """Test UI has expected attributes"""
+        from sponsor_match.ui.app_v2 import SponsorMatchUI
+
+        ui = SponsorMatchUI()
+
+        # Check for attributes we saw in the test output
+        assert hasattr(ui, 'clubs_df')
+        assert hasattr(ui, 'engine')
+        assert hasattr(ui, 'render_main_page')
+
+
+class TestDataIngestion:
+    """Test data ingestion functionality"""
+
+    def test_ingest_associations_import(self):
+        """Test that ingest_associations can be imported"""
+        from sponsor_match.data.ingest_associations import main
+        assert main is not None
+
+    def test_ingest_csv_import(self):
+        """Test that ingest_csv can be imported"""
+        from sponsor_match.data.ingest_csv import main
+        assert main is not None
+
+
+class TestIntegration:
+    """Integration tests that test multiple components working together"""
+
+    def test_database_to_dataclass_flow(self):
+        """Test loading data from database into dataclass entities"""
+        from sponsor_match.core.db import get_engine
+        from sponsor_match.models.entities import Club
+        from sqlalchemy import text
+
+        engine = get_engine()
+        with engine.connect() as conn:
+            # Get a club from database
+            result = conn.execute(text("""
+                SELECT id, name, member_count, address, lat, lon, size_bucket, founded_year
+                FROM clubs LIMIT 1
+            """))
+            row = result.fetchone()
+
+            if row:
+                # Create Club dataclass from database row
+                club = Club(
+                    id=row[0],
+                    name=row[1],
+                    member_count=row[2],
+                    address=row[3],
+                    lat=row[4],
+                    lon=row[5],
+                    size_bucket=row[6],
+                    founded_year=row[7]
+                )
+                assert club.name == row[1]
+
+
+class TestConfiguration:
+    """Test configuration loading"""
+
+    def test_config_import(self):
+        """Test that config can be imported"""
+        from sponsor_match.core.config import Config
+        assert Config is not None
+
+    def test_config_db_attributes(self):
+        """Test that config has database-related attributes"""
+        from sponsor_match.core.config import Config
+
+        # Check for any database-related configuration
+        config_attrs = dir(Config)
+        db_attrs = [attr for attr in config_attrs if 'DB' in attr or 'DATABASE' in attr]
+        assert len(db_attrs) > 0
+
+
+class TestPerformance:
+    """Test performance characteristics of the application"""
+
+    def test_database_query_performance(self):
+        """Test that database queries perform reasonably"""
+        import time
+        from sponsor_match.core.db import get_engine
+        from sqlalchemy import text
+
+        engine = get_engine()
+        with engine.connect() as conn:
+            start_time = time.time()
+            result = conn.execute(text("SELECT * FROM companies LIMIT 100"))
+            companies = result.fetchall()
+            end_time = time.time()
+
+            # Query should complete in less than 1 second
+            assert end_time - start_time < 1.0
+            assert len(companies) <= 100
+
+
+if __name__ == "__main__":
+    pytest.main(["-v", "-s", __file__])
+
+
+
+================================================================================
+FIL: tests/test_feature_engineer.py
+================================================================================
+
+# test_feature_engineer.py
+from sponsor_match.models.features import FeatureEngineer
+import pandas as pd
+
+# Create test data
+clubs_df = pd.DataFrame({
+    'name': ['Test Club'],
+    'lat': [57.7089],
+    'lon': [11.9746],
+    'size_bucket': ['medium']
+})
+
+companies_df = pd.DataFrame({
+    'name': ['Company A', 'Company B', 'Company C'],
+    'lat': [57.7200, 57.6900, 57.7500],
+    'lon': [11.9800, 11.9600, 12.0000],
+    'revenue_ksek': [5000, 10000, 2000],
+    'employees': [50, 100, 20],
+    'size_bucket': ['medium', 'large', 'small']
+})
+
+# Initialize FeatureEngineer and calculate features
+engineer = FeatureEngineer()
+features = engineer.create_features(
+    pd.concat([clubs_df] * len(companies_df)).reset_index(drop=True),
+    companies_df
+)
+
+# Print results
+print(features)
+
+# Test individual methods
+print("\nDistance calculation:")
+print(FeatureEngineer.calculate_distance_km(57.7089, 11.9746, 57.7200, 11.9800))
+
+print("\nSize matching:")
+print(FeatureEngineer.calculate_size_match(
+    pd.Series(['small', 'medium', 'large']),
+    pd.Series(['small', 'large', 'medium'])
+))
+
+
+
+================================================================================
+FIL: sponsor_match/services/recommendation.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/services/recommendation.py
+----------------------------------------
+Facade for the v2 SponsorMatchService, exposing a simple RecommendationService API.
+"""
+
+import logging
+from typing import Dict, Any
+
+from sponsor_match.core.db import get_engine
+from sponsor_match.services.service_v2 import (
+    SponsorMatchService,
+    RecommendationRequest,
+    RecommendationResult,
+)
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+
+class RecommendationService:
+    """
+    Wraps SponsorMatchService to provide a simplified interface.
+    """
+
+    def __init__(self, cluster_models: Dict[str, Any] = None) -> None:
+        """
+        Args:
+            cluster_models: optional mapping size_bucket → trained KMeans models
+        """
+        self.db = get_engine()
+        self.cluster_models = cluster_models or {}
+        self._service = SponsorMatchService(self.db, self.cluster_models)
+
+    def recommend(self, request: RecommendationRequest) -> RecommendationResult:
+        """
+        Generate recommendations based on the given request.
+
+        Parameters
+        ----------
+        request : RecommendationRequest
+            Contains club_id or lat/lon, size_bucket, top_n, and any filters.
+
+        Returns
+        -------
+        RecommendationResult
+            DataFrame of top companies, score dict, and metadata.
+        """
+        logger.info(
+            "Processing recommendation (club_id=%s, coords=(%s,%s), bucket=%s)",
+            request.club_id, request.lat, request.lon, request.size_bucket
+        )
+        try:
+            result = self._service.recommend(request)
+            logger.info(
+                "Produced %d matches (request_id=%s)",
+                len(result.companies), result.metadata.get("request_id")
+            )
+            return result
+        except Exception as e:
+            logger.exception("RecommendationService.recommend failed: %s", e)
+            raise
+
+
+================================================================================
+FIL: sponsor_match/services/service_v2.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/services/service_v2.py
+------------------------------------
+Business‐logic layer (v2) for SponsorMatch AI.
+Takes a RecommendationRequest and returns a RecommendationResult.
+"""
+
+import logging
+import uuid
+from dataclasses import dataclass
+from typing import Optional, Dict, Any
+
+import pandas as pd
+import numpy as np
+from geopy.distance import geodesic
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+
+@dataclass
+class RecommendationRequest:
+    club_id: Optional[int] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    size_bucket: str = "medium"
+    top_n: int = 15
+    filters: Dict[str, Any] = None
+
+@dataclass
+class RecommendationResult:
+    companies: pd.DataFrame
+    scores: Dict[int, float]
+    metadata: Dict[str, Any]
+
+class SponsorMatchService:
+    def __init__(self, db_engine, cluster_models: Dict[str, Any]):
+        """
+        Args:
+            db_engine: SQLAlchemy Engine or connection.
+            cluster_models: mapping size_bucket → trained MiniBatchKMeans.
+        """
+        self.db = db_engine
+        self.cluster_models = cluster_models or {}
+
+    def _get_club_by_id(self, club_id: int) -> pd.Series:
+        """Fetch a single club row from the DB."""
+        df = pd.read_sql(
+            "SELECT * FROM clubs WHERE id = :id",
+            self.db,
+            params={"id": club_id}
+        )
+        if df.empty:
+            raise ValueError(f"No club found with id={club_id}")
+        return df.iloc[0]
+
+    def _find_matching_companies(
+            self, request: RecommendationRequest
+    ) -> pd.DataFrame:
+        """
+        Pull all companies in the same size bucket, apply any filters,
+        and optionally filter to the nearest cluster.
+
+        Supported filters:
+        - industries: list of industry names to include
+        - max_distance: maximum distance in kilometers
+        """
+        # First, get all companies in the same size bucket
+        firms = pd.read_sql(
+            "SELECT * FROM companies WHERE size_bucket = :bucket",
+            self.db,
+            params={"bucket": request.size_bucket}
+        )
+
+        # Drop companies without coordinates
+        firms = firms.dropna(subset=["lat", "lon"]).reset_index(drop=True)
+
+        # Apply geographical clustering if model exists
+        model = self.cluster_models.get(request.size_bucket)
+        if model is not None:
+            # Correctly predict cluster for the club's location
+            club_cluster = int(model.predict([[request.lat, request.lon]])[0])
+
+            # Predict clusters for all companies
+            company_coords = firms[["lat", "lon"]].values
+            company_clusters = model.predict(company_coords)
+
+            # Keep only companies in the same cluster as the club
+            firms = firms[company_clusters == club_cluster].reset_index(drop=True)
+
+        # Apply industry filter if specified
+        if request.filters and request.filters.get("industries"):
+            industries = request.filters["industries"]
+            if industries:  # Only filter if the list is not empty
+                firms = firms[firms["industry"].isin(industries)]
+
+        # Calculate distances for all remaining companies
+        if firms.empty:
+            return firms
+
+        firms["dist_km"] = firms.apply(
+            lambda r: geodesic((r.lat, r.lon), (request.lat, request.lon)).km,
+            axis=1
+        )
+
+        # Apply maximum distance filter if specified
+        if request.filters and request.filters.get("max_distance"):
+            max_distance = request.filters["max_distance"]
+            firms = firms[firms["dist_km"] <= max_distance]
+
+        return firms
+
+    @staticmethod
+    def _calculate_scores(
+            firms: pd.DataFrame,
+        request: RecommendationRequest
+    ) -> pd.Series:
+        """
+        Compute a composite score ∈ [0,1] for each row in `firms`:
+          - distance decay: exp(−dist_km/50)
+          - revenue per employee normalized
+        Returns a Series indexed by `firms`’ index.
+        """
+        # 1) geodesic distance
+        distances = firms.apply(
+            lambda r: geodesic((r.lat, r.lon), (request.lat, request.lon)).km,
+            axis=1
+        )
+        # 2) distance score
+        dist_score = np.exp(-distances / 50)
+
+        # 3) revenue per employee
+        rev_per_emp = firms.revenue_ksek * 1000 / firms.employees.clip(lower=1)
+        if rev_per_emp.std() > 0:
+            rev_norm = (rev_per_emp - rev_per_emp.min()) / (rev_per_emp.max() - rev_per_emp.min())
+        else:
+            rev_norm = pd.Series(0.0, index=firms.index)
+
+        # 4) composite (equal weights)
+        composite = 0.5 * dist_score + 0.5 * rev_norm
+        return composite
+
+    def recommend(
+        self,
+        request: RecommendationRequest
+    ) -> RecommendationResult:
+        """
+        Generate sponsor recommendations.
+
+        1. Resolve club coordinates if only club_id was given.
+        2. Fetch & optionally cluster-filter companies.
+        3. Score & pick the top_n.
+        """
+        # 1) ensure we have lat/lon
+        if request.club_id is not None and (request.lat is None or request.lon is None):
+            club = self._get_club_by_id(request.club_id)
+            request.lat = float(club.lat)
+            request.lon = float(club.lon)
+
+        if request.lat is None or request.lon is None:
+            raise ValueError("Must provide either club_id or both lat and lon")
+
+        # 2) get candidate firms
+        firms = self._find_matching_companies(request)
+        if firms.empty:
+            logger.info("No candidate companies found for bucket '%s'", request.size_bucket)
+            return RecommendationResult(companies=pd.DataFrame(), scores={}, metadata={})
+
+        # 3) score them
+        raw_scores = self._calculate_scores(firms, request)
+        # pick top N
+        top = raw_scores.sort_values(ascending=False).head(request.top_n)
+        result_df = firms.loc[top.index].copy().reset_index(drop=True)
+        # attach a percent score for display
+        result_df["score"] = (top * 100).round(1).values
+
+        # build a simple scores dict (row-index → score)
+        scores_dict = dict(zip(range(len(result_df)), result_df["score"].tolist()))
+
+        metadata = {"request_id": str(uuid.uuid4())}
+        return RecommendationResult(companies=result_df, scores=scores_dict, metadata=metadata)
+
+
+================================================================================
+FIL: sponsor_match/cli/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: sponsor_match/cli/db_init.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/db_init.py
+------------------------
+Create (if needed) the `clubs` and `companies` tables in MySQL.
+
+Usage:
+    python -m sponsor_match.db_init
+"""
+
+import logging
+from argparse import ArgumentParser
+from textwrap import dedent
+from sponsor_match.core.db import get_engine
+
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+DDL = dedent("""
+    CREATE TABLE IF NOT EXISTS clubs (
+        id           INT PRIMARY KEY AUTO_INCREMENT,
+        name         VARCHAR(120),
+        size_bucket  ENUM('small','medium','large'),
+        lat          DOUBLE,
+        lon          DOUBLE
+    ) CHARACTER SET utf8mb4;
+
+    CREATE TABLE IF NOT EXISTS companies (
+        id            INT PRIMARY KEY AUTO_INCREMENT,
+        orgnr         CHAR(10),
+        name          VARCHAR(200),
+        revenue_ksek  DOUBLE,
+        employees     INT,
+        year          INT,
+        rev_per_emp   DOUBLE,
+        size_bucket   ENUM('small','medium','large'),
+        industry      VARCHAR(120),
+        lat           DOUBLE,
+        lon           DOUBLE
+    ) CHARACTER SET utf8mb4;
+""")
+
+def main(dry_run: bool = False) -> None:
+    """
+    Execute the DDL statements to ensure tables exist.
+    If dry_run is True, only logs the statements without executing.
+    """
+    engine = get_engine()
+    logger.info("Connecting to database")
+    if dry_run:
+        logger.info("Dry run mode: the following statements would be executed:\n%s", DDL)
+        return
+
+    try:
+        with engine.begin() as conn:
+            for stmt in DDL.strip().split(";"):
+                stmt = stmt.strip()
+                if not stmt:
+                    continue
+                conn.exec_driver_sql(stmt)
+                logger.info("Executed DDL: %s", stmt.splitlines()[0])
+        logger.info("✅ Tables `clubs` and `companies` are ready")
+    except Exception as e:
+        logger.exception("Database initialization failed: %s", e)
+        raise
+
+if __name__ == "__main__":
+    parser = ArgumentParser(description="Initialize MySQL tables for SponsorMatch")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show DDL without executing"
+    )
+    args = parser.parse_args()
+    main(dry_run=args.dry_run)
+
+
+================================================================================
+FIL: sponsor_match/cli/train_matcher.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/ui/train_matcher.py
+-------------------------------
+Train a GradientBoostingClassifier on labeled sponsor–club pairs and save the model.
+
+Usage:
+    python -m sponsor_match.train_matcher \
+        --input data/positive_pairs.parquet \
+        --model-dir models \
+        --test-size 0.2 \
+        --random-state 1
+"""
+
+import logging
+from argparse import ArgumentParser
+from pathlib import Path
+
+import pandas as pd
+import joblib
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import GradientBoostingClassifier
+
+from sponsor_match.models.features import FeatureEngineer
+
+# Configure logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+
+def main(
+    input_path: Path,
+    model_dir: Path,
+    test_size: float,
+    random_state: int
+) -> None:
+    """
+    Load training data, engineer features, split into train/validation,
+    train a GradientBoostingClassifier, evaluate on validation,
+    and persist the model.
+
+    Parameters
+    ----------
+    input_path : Path
+        Parquet file containing positive and negative club–company pairs with a 'label' column.
+    model_dir : Path
+        Directory in which to save the trained model artifact.
+    test_size : float
+        Proportion of the dataset to reserve for validation.
+    random_state : int
+        Seed for reproducibility of the train/validation split.
+    """
+    logger.info("Loading data from %s", input_path)
+    df = pd.read_parquet(input_path)
+    logger.info("Data contains %d rows", len(df))
+
+    logger.info("Creating pairwise features")
+    X = FeatureEngineer.make_pair_features(df)
+    y = df["label"]
+
+    logger.info(
+        "Splitting data (test_size=%.2f, random_state=%d)",
+        test_size, random_state
+    )
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=test_size, random_state=random_state
+    )
+
+    logger.info("Training GradientBoostingClassifier")
+    clf = GradientBoostingClassifier()
+    clf.fit(X_train, y_train)
+
+    val_score = clf.score(X_val, y_val)
+    logger.info("Validation accuracy: %.4f", val_score)
+
+    model_dir.mkdir(parents=True, exist_ok=True)
+    model_path = model_dir / "match_gb.joblib"
+    joblib.dump(clf, model_path)
+    logger.info("Model saved to %s", model_path)
+
+if __name__ == "__main__":
+    parser = ArgumentParser(
+        description="Train the sponsor–club matching classifier"
+    )
+    parser.add_argument(
+        "--input",
+        type=Path,
+        default=Path("data/positive_pairs.parquet"),
+        help="Path to Parquet file with labeled pairs"
+    )
+    parser.add_argument(
+        "--model-dir",
+        type=Path,
+        default=Path("models"),
+        help="Directory to write the trained model"
+    )
+    parser.add_argument(
+        "--test-size",
+        type=float,
+        default=0.2,
+        help="Fraction of data for validation"
+    )
+    parser.add_argument(
+        "--random-state",
+        type=int,
+        default=1,
+        help="Random seed for splitting"
+    )
+    args = parser.parse_args()
+    main(
+        input_path=args.input,
+        model_dir=args.model_dir,
+        test_size=args.test_size,
+        random_state=args.random_state
+    )
+
+
+================================================================================
+FIL: sponsor_match/ui/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: sponsor_match/ui/app_v2.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/ui/app_v2.py
+---------------------------
+Streamlit UI (v2) for SponsorMatch AI.
+"""
+
+import logging
+from pathlib import Path
+
+import joblib
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+from folium import Map, Icon, Marker
+from folium.map import Popup
+from folium.plugins import MarkerCluster, HeatMap
+from streamlit_folium import st_folium
+
+from sponsor_match.core.config import config
+from sponsor_match.core.db import get_engine
+from sponsor_match.services.service_v2 import RecommendationRequest, SponsorMatchService
+
+# ─── Logging ────────────────────────────────────────────────────────────────
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+
+# ─── UI CLASS ───────────────────────────────────────────────────────────────
+class SponsorMatchUI:
+    def __init__(self) -> None:
+        st.set_page_config(
+            page_title="SponsorMatch AI",
+            page_icon="⚽",
+            layout="wide",
+            initial_sidebar_state="expanded",
+        )
+        self.engine = get_engine()
+        self.clubs_df = self._load_clubs()
+
+    def _load_clubs(self) -> pd.DataFrame:
+        query = """
+            SELECT id, name, member_count, address, lat, lon, size_bucket
+            FROM clubs
+            ORDER BY name
+        """
+        return pd.read_sql(query, self.engine)
+
+    @staticmethod
+    def _marker_color(score: float) -> str:
+        if score >= 80:
+            return "green"
+        if score >= 50:
+            return "blue"
+        return "lightgray"
+
+    @staticmethod
+    def _club_popup(club: dict) -> str:
+        return f"""
+        <div>
+          <h4>{club.get('name','')}</h4>
+          <p>Members: {club.get('member_count','')}</p>
+          <p>Size: {club.get('size_bucket','')}</p>
+          <p>Address: {club.get('address','')}</p>
+        </div>
+        """
+
+    @staticmethod
+    def _company_popup(comp: dict) -> str:
+        return f"""
+        <div>
+          <h4>{comp.get('name','')}</h4>
+          <p>Score: {comp.get('score',0)}%</p>
+          <p>Industry: {comp.get('industry','')}</p>
+          <p>Distance: {comp.get('dist_km',0):.1f} km</p>
+        </div>
+        """
+
+    @staticmethod
+    def _radar_chart(factors: dict) -> go.Figure:
+        cats = list(factors.keys())
+        vals = list(factors.values())
+        theta = cats + cats[:1]
+        r = vals + vals[:1]
+        fig = go.Figure(
+            data=go.Scatterpolar(r=r, theta=theta, fill="toself")
+        )
+        fig.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+            showlegend=False,
+            margin=dict(l=30, r=30, t=30, b=30),
+        )
+        return fig
+
+    def _run_search(self, club_name: str, size_bucket: str, industries: list[str], max_distance: float):
+        # find club
+        row = self.clubs_df[self.clubs_df["name"] == club_name].iloc[0]
+        lat, lon = float(row["lat"]), float(row["lon"])
+        club_id = int(row["id"])
+        st.session_state["club_data"] = row.to_dict()
+
+        # prepare request
+        req = RecommendationRequest(
+            club_id=club_id,
+            lat=lat,
+            lon=lon,
+            size_bucket=size_bucket,
+            filters={"industries": industries, "max_distance": max_distance},
+        )
+
+        # load whatever KMeans models exist
+        cluster_models: dict[str, joblib.Memory] = {}
+        for b in ("small", "medium", "large"):
+            path = Path(config.models_dir) / f"kmeans_{b}.joblib"
+            if path.exists():
+                cluster_models[b] = joblib.load(path)
+            else:
+                logger.warning("No model file for bucket %s → skipping", b)
+
+        service = SponsorMatchService(self.engine, cluster_models=cluster_models)
+        res = service.recommend(req)
+        st.session_state["results"] = res.companies.to_dict("records")
+
+    def _render_recommendations(self):
+        recs = st.session_state.get("results", [])
+        if not recs:
+            st.info("👆 Select filters and click **Search** to find sponsors")
+            return
+
+        df = pd.DataFrame(recs)
+        st.metric("Matches Found", len(df))
+        st.dataframe(df[["name","revenue_ksek","employees","dist_km","industry","score"]])
+
+        for i, comp in enumerate(recs):
+            with st.expander(f"#{i+1} {comp['name']} — {comp['score']}%"):
+                c0, c1 = st.columns([2,1])
+                c0.markdown(f"**Industry:** {comp['industry']}")
+                c0.markdown(f"**Revenue:** {comp['revenue_ksek']}")
+                c0.markdown(f"**Employees:** {comp['employees']}")
+                c0.markdown(f"**Distance:** {comp['dist_km']:.1f} km")
+                c1.plotly_chart(self._radar_chart(comp.get("match_factors", {})), use_container_width=True)
+
+    @staticmethod
+    def _render_analytics():
+        recs = st.session_state.get("results", [])
+        if not recs:
+            st.info("No data for analytics")
+            return
+        df = pd.DataFrame(recs)
+        st.plotly_chart(px.histogram(df, x="industry", title="Sponsors by Industry"), use_container_width=True)
+        st.plotly_chart(px.scatter(df, x="dist_km", y="score", title="Score vs. Distance"), use_container_width=True)
+
+    def _render_map(self):
+        club = st.session_state.get("club_data", {"lat":57.7089,"lon":11.9746})
+        recs = st.session_state.get("results", [])
+
+        center = [club.get("lat",57.7089), club.get("lon",11.9746)]
+        m = Map(location=center, zoom_start=11)
+
+        # club marker
+        if "id" in club:
+            Marker(
+                location=[club["lat"], club["lon"]],
+                popup=Popup(self._club_popup(club), max_width=300),
+                icon=Icon(color="red", icon="home"),
+            ).add_to(m)
+
+        # sponsors
+        if recs:
+            cluster = MarkerCluster().add_to(m)
+            heat = []
+            for comp in recs:
+                lat = comp.get("lat")
+                lon = comp.get("lon")
+                if lat and lon:
+                    Marker(
+                        location=[lat, lon],
+                        popup=Popup(self._company_popup(comp), max_width=300),
+                        icon=Icon(color=self._marker_color(comp.get("score",0))),
+                    ).add_to(cluster)
+                    heat.append([lat, lon, comp.get("score",0)])
+            if heat:
+                HeatMap(heat).add_to(m)
+
+        st_folium(m, use_container_width=True, height=600)
+
+    @staticmethod
+    def _render_insights():
+        recs = st.session_state.get("results", [])
+        if not recs:
+            st.info("No insights available")
+            return
+        df = pd.DataFrame(recs)
+        st.metric("Average Score", f"{df['score'].mean():.1f}%")
+        st.metric("Average Distance", f"{df['dist_km'].mean():.1f} km")
+
+    def render_main_page(self):
+        # Header
+        c1, c2, c3 = st.columns([1,2,1])
+        with c2:
+            st.image(Path("assets/logo.png"), width=180)
+            st.title("SponsorMatch AI")
+
+        # Sidebar
+        st.sidebar.header("🔍 Search Filters")
+        clubs = ["— choose —"] + self.clubs_df["name"].tolist()
+        choice = st.sidebar.selectbox("Club Name", clubs)
+        default_bucket = (
+            self.clubs_df.loc[self.clubs_df["name"]==choice, "size_bucket"].iat[0]
+            if choice!="— choose —" else "medium"
+        )
+        bucket = st.sidebar.selectbox("Club Size", ["small","medium","large"], index=["small","medium","large"].index(default_bucket))
+        industries = st.sidebar.multiselect("Industries", [])  # you can wire this up later
+        max_dist = st.sidebar.slider("Max distance (km)", 0, 100, 25)
+
+        if st.sidebar.button("Search") and choice!="— choose —":
+            self._run_search(choice, bucket, industries, max_dist)
+
+        # Tabs
+        t1, t2, t3, t4 = st.tabs(["🎯 Recommendations","📊 Analytics","🗺️ Map View","📈 Insights"])
+        with t1: self._render_recommendations()
+        with t2: self._render_analytics()
+        with t3: self._render_map()
+        with t4: self._render_insights()
+
+# ─── ENTRYPOINT ───────────────────────────────────────────────────────────────
+def main():
+    SponsorMatchUI().render_main_page()
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: sponsor_match/core/config.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/core/config.py
+-----------------------------
+Application configuration loaded from environment variables.
+"""
+
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load variables from .env into the environment (if present)
+load_dotenv()
+
+
+@dataclass(frozen=True)
+class Config:
+    """
+    Configuration parameters for SponsorMatch AI.
+    Values are read from environment variables with sensible defaults.
+    """
+
+    # Database connection
+    db_host: str = os.getenv("MYSQL_HOST", "localhost")
+    db_port: int = int(os.getenv("MYSQL_PORT", "3306"))
+    db_user: str = os.getenv("MYSQL_USER", "sponsor_user")
+    db_password: str = os.getenv("MYSQL_PASSWORD", "")
+    db_name: str = os.getenv("MYSQL_DB", "sponsor_registry")
+
+    # Project paths
+    project_root: Path = Path(__file__).resolve().parent.parent
+    data_dir: Path = project_root / "data"
+    models_dir: Path = project_root / "models"
+
+    # KMeans parameters
+    kmeans_clusters: int = int(os.getenv("KMEANS_CLUSTERS", "8"))
+    kmeans_batch_size: int = int(os.getenv("KMEANS_BATCH_SIZE", "256"))
+
+    # Business rules for bucketing
+    size_buckets: dict = field(
+        default_factory=lambda: {
+            "revenue": [0, 5_000_000, 50_000_000, float("inf")],
+            "members": [0, 100, 500, float("inf")],
+        }
+    )
+
+    # Geocoding settings
+    geocoding_delay: float = float(os.getenv("GEOCODING_DELAY", "1.1"))
+    geocoding_timeout: int = int(os.getenv("GEOCODING_TIMEOUT", "10"))
+
+
+# Instantiate a single, immutable config object for the app to use
+config = Config()
+
+
+================================================================================
+FIL: sponsor_match/core/db.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/core/db.py
+------------------------
+Set up and return a SQLAlchemy Engine based on application configuration
+and environment variables from a `.env` file.
+"""
+
+import os
+import logging
+from pathlib import Path
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+
+# 1) Load .env from the project root (if present)
+env_path = Path(__file__).parent.parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+
+# 2) Read DB creds from environment (fallback to config)
+from sponsor_match.core.config import config
+
+DB_USER = os.getenv("MYSQL_USER", config.db_user)
+DB_PWD = os.getenv("MYSQL_PASSWORD", config.db_password)
+DB_HOST = os.getenv("MYSQL_HOST", config.db_host)
+DB_PORT = os.getenv("MYSQL_PORT", str(config.db_port))
+DB_NAME = os.getenv("MYSQL_DB", config.db_name)
+
+# Configure module‐level logger
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+
+def get_engine(url: str | None = None, **kwargs) -> Engine:
+    """
+    Create and return a SQLAlchemy engine.
+    - If `url` is provided, it is used verbatim.
+    - Otherwise, environment vars (or config) are used to build the URL.
+    """
+    if url is None:
+        if not DB_PWD:
+            logger.error(
+                "Database password not set. Please set MYSQL_PASSWORD in your environment."
+            )
+            raise ValueError(
+                "Database password not set. Please set MYSQL_PASSWORD in your environment."
+            )
+        url = (
+            f"mysql+mysqlconnector://{DB_USER}:"
+            f"{DB_PWD}@"
+            f"{DB_HOST}:{DB_PORT}/"
+            f"{DB_NAME}"
+        )
+
+    logger.debug("Creating DB engine with URL: %s", url)
+    return create_engine(url, pool_pre_ping=True, **kwargs)
+
+
+================================================================================
+FIL: sponsor_match/core/logger.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/core/logger.py
+----------------------------
+Utility to configure and retrieve named loggers, with console
+and optional file handlers.
+"""
+
+import logging
+import sys
+from pathlib import Path
+
+def setup_logger(
+    name: str,
+    log_file: Path | None = None,
+    level: int = logging.INFO
+) -> logging.Logger:
+    """
+    Return a logger configured with:
+      - StreamHandler (stdout) at `level`
+      - Optional FileHandler if `log_file` is provided
+    """
+    logger = logging.getLogger(name)
+    if logger.handlers:
+        # Already configured
+        return logger
+
+    logger.setLevel(level)
+    fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    formatter = logging.Formatter(fmt)
+
+    console = logging.StreamHandler(sys.stdout)
+    console.setLevel(level)
+    console.setFormatter(formatter)
+    logger.addHandler(console)
+
+    if log_file:
+        file_h = logging.FileHandler(log_file)
+        file_h.setLevel(level)
+        file_h.setFormatter(formatter)
+        logger.addHandler(file_h)
+
+    return logger
+
+
+================================================================================
+FIL: sponsor_match/models/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: sponsor_match/models/club_extended.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+models/club_extended.py
+------------------------
+Extended data model for sports clubs, including enrichment fields
+for membership, financials, and sponsorship details.
+"""
+
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
+
+
+@dataclass
+class ExtendedClub:
+    """
+    Represents a sports club with both basic and enriched metadata.
+    """
+
+    # Basic info
+    id: int
+    name: str
+    member_count: int
+    address: str
+    lat: Optional[float]
+    lon: Optional[float]
+    size_bucket: str
+
+    # Extended basic info
+    founded_year: int
+    club_type: str
+    registration_number: str
+    website: str
+    email: str
+    phone: str
+    social_media: Dict[str, str] = field(default_factory=dict)
+
+    # Sports & activities
+    sport_types: List[str] = field(default_factory=list)
+    primary_sport: str = ""
+    leagues: List[str] = field(default_factory=list)
+    division_level: int = 0
+
+    # Membership breakdown
+    active_members: int = 0
+    youth_members: int = 0
+    gender_distribution: Dict[str, float] = field(default_factory=dict)
+    membership_growth_rate: float = 0.0
+
+    # Financials
+    annual_revenue: float = 0.0
+    sponsorship_revenue: float = 0.0
+    financial_status: str = ""
+
+    # Sponsorship history
+    current_sponsors: List[str] = field(default_factory=list)
+    sponsorship_packages: List[Dict[str, any]] = field(default_factory=list)
+    sponsor_retention_rate: float = 0.0
+
+    # Community engagement
+    volunteer_count: int = 0
+    fan_base_size: int = 0
+    social_media_followers: Dict[str, int] = field(default_factory=dict)
+
+    # Infrastructure
+    owned_facilities: List[str] = field(default_factory=list)
+    stadium_capacity: int = 0
+    facility_conditions: Dict[str, str] = field(default_factory=dict)
+
+
+================================================================================
+FIL: sponsor_match/models/clustering.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/models/clustering.py
+----------------------------------
+Train MiniBatchKMeans models on club geocoordinates,
+one per size bucket, and persist them to disk.
+"""
+
+import logging
+from pathlib import Path
+
+import joblib
+import pandas as pd
+from sklearn.cluster import MiniBatchKMeans
+
+from sponsor_match.core.db import get_engine
+from sponsor_match.core.config import config
+
+# Configure logger
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+
+MODEL_DIR: Path = config.models_dir
+MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+def train_kmeans_for_bucket(size_bucket: str) -> None:
+    logger.info("Loading clubs in bucket '%s'", size_bucket)
+    engine = get_engine()
+
+    # Inline the bucket value for compatibility
+    sql = f"SELECT lat, lon FROM clubs WHERE size_bucket = '{size_bucket}'"
+    df = pd.read_sql(sql, engine)
+
+    coords = df.dropna(subset=["lat", "lon"]).to_numpy()
+    if coords.size == 0:
+        logger.warning("No coordinates found for bucket '%s'; skipping", size_bucket)
+        return
+
+    logger.info(
+        "Training MiniBatchKMeans (n_clusters=%d, batch_size=%d) on %d points",
+        config.kmeans_clusters,
+        config.kmeans_batch_size,
+        len(coords),
+    )
+    km = MiniBatchKMeans(
+        n_clusters=config.kmeans_clusters,
+        batch_size=config.kmeans_batch_size,
+        random_state=42
+    )
+    km.fit(coords)
+
+    out_path = MODEL_DIR / f"kmeans_{size_bucket}.joblib"
+    joblib.dump(km, out_path)
+    logger.info("Saved KMeans model to %s", out_path)
+
+def main() -> None:
+    for bucket in ["small", "medium", "large"]:
+        train_kmeans_for_bucket(bucket)
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: sponsor_match/models/entities.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+models/entities.py
+------------------
+Domain entity classes for SponsorMatch AI.
+"""
+
+from dataclasses import dataclass, field
+from typing import Optional, List
+
+
+@dataclass(frozen=True)
+class Club:
+    """
+    Basic representation of a sports club.
+    """
+    id: int
+    name: str
+    member_count: int
+    address: str
+    lat: Optional[float]
+    lon: Optional[float]
+    size_bucket: str
+    founded_year: Optional[int]
+    sport_types: List[str] = field(default_factory=list)
+    youth_teams: int = 0
+
+
+@dataclass(frozen=True)
+class Company:
+    """
+    Basic representation of a company sponsor.
+    """
+    id: int
+    orgnr: str
+    name: str
+    revenue_ksek: float
+    employees: int
+    year: int
+    size_bucket: str
+    lat: Optional[float]
+    lon: Optional[float]
+    industry: str
+    previous_sponsorships: List[str] = field(default_factory=list)
+
+
+================================================================================
+FIL: sponsor_match/models/features.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/models/features.py
+--------------------------------
+Feature engineering for SponsorMatch ML models.
+
+This module provides comprehensive feature engineering capabilities for analyzing
+and scoring potential sponsor-club matches based on multiple dimensions including
+geographic proximity, size compatibility, and industry relevance.
+"""
+
+import numpy as np
+import pandas as pd
+from datetime import datetime
+from typing import Dict
+
+from geopy.distance import geodesic
+
+
+class FeatureEngineer:
+    """
+    Compute pairwise features between clubs and companies for recommendation ranking.
+
+    This class contains methods for calculating various features used in matching
+    sponsors with clubs, including geographic distance, size compatibility,
+    industry affinity, and economic indicators.
+    """
+
+    @staticmethod
+    def calculate_distance_km(
+            lat1: float, lon1: float, lat2: float, lon2: float
+    ) -> float:
+        """
+        Calculate the geodesic distance in kilometers between two latitude/longitude points.
+
+        Parameters
+        ----------
+        lat1, lon1 : float
+            Latitude and longitude of the first point.
+        lat2, lon2 : float
+            Latitude and longitude of the second point.
+
+        Returns
+        -------
+        float
+            Distance in kilometers.
+
+        Raises
+        ------
+        TypeError
+            If any coordinates are None or not convertible to float.
+        ValueError
+            If coordinates are invalid for distance calculation.
+        """
+        # Add explicit None check to match test expectations
+        if any(x is None for x in [lat1, lon1, lat2, lon2]):
+            raise TypeError("Coordinates cannot be None")
+
+        try:
+            return geodesic((lat1, lon1), (lat2, lon2)).km
+        except (ValueError, TypeError) as e:
+            # Re-raise with more descriptive message
+            raise type(e)(f"Invalid coordinates for distance calculation: {e}")
+
+    @staticmethod
+    def add_distance(
+            df: pd.DataFrame,
+            lat: float,
+            lon: float,
+            lat_col: str = "lat",
+            lon_col: str = "lon",
+            new_col: str = "distance_km",
+    ) -> pd.DataFrame:
+        """
+        Return a copy of `df` with a new column `new_col` representing the distance
+        from the fixed point (`lat`, `lon`) to each row's (lat_col, lon_col).
+
+        Parameters
+        ----------
+        df : DataFrame
+            Input data with latitude/longitude columns.
+        lat, lon : float
+            Reference point coordinates.
+        lat_col, lon_col : str, default "lat","lon"
+            Column names in `df` for latitude and longitude.
+        new_col : str, default "distance_km"
+            Name of the output distance column.
+
+        Returns
+        -------
+        DataFrame
+            Copy of `df` with the added distance column.
+        """
+        df_copy = df.copy()
+        df_copy[new_col] = df_copy.apply(
+            lambda row: FeatureEngineer.calculate_distance_km(
+                lat, lon, row[lat_col], row[lon_col]
+            ),
+            axis=1,
+        )
+        return df_copy
+
+    @staticmethod
+    def bucket_assoc_size(members: int) -> str:
+        """
+        Bucket a club's member count into 'small', 'medium', or 'large'.
+
+        Parameters
+        ----------
+        members : int
+            Number of members in the association.
+
+        Returns
+        -------
+        str
+            One of "small" (<200), "medium" (<1000), or "large" (>=1000).
+        """
+        if members < 200:
+            return "small"
+        if members < 1000:
+            return "medium"
+        return "large"
+
+    @staticmethod
+    def calculate_distance(
+            club_coords: pd.DataFrame,
+            comp_coords: pd.DataFrame
+    ) -> pd.Series:
+        """
+        Compute geodesic distance (km) between each club–company pair.
+
+        This batch method is more efficient than applying calculate_distance_km
+        individually when processing many pairs.
+
+        Parameters
+        ----------
+        club_coords : DataFrame
+            DataFrame with lat/lon columns for clubs
+        comp_coords : DataFrame
+            DataFrame with lat/lon columns for companies
+
+        Returns
+        -------
+        Series
+            Distances in kilometers, named "distance_km"
+
+        Notes
+        -----
+        Both DataFrames must have the same length and matching rows.
+        """
+        if len(club_coords) != len(comp_coords):
+            raise ValueError("Input DataFrames must have the same length")
+
+        # Use vectorized calculation when possible, falling back to row-wise
+        distances = [
+            FeatureEngineer.calculate_distance_km(
+                club_coords.iloc[i]["lat"],
+                club_coords.iloc[i]["lon"],
+                comp_coords.iloc[i]["lat"],
+                comp_coords.iloc[i]["lon"]
+            )
+            for i in range(len(club_coords))
+        ]
+        return pd.Series(distances, name="distance_km")
+
+    @staticmethod
+    def calculate_size_match(
+            club_sizes: pd.Series,
+            comp_sizes: pd.Series
+    ) -> pd.Series:
+        """
+        Score size compatibility: exact match → 1.0; adjacent → 0.5; else → 0.0.
+
+        Parameters
+        ----------
+        club_sizes : Series
+            Size categories for clubs (small/medium/large)
+        comp_sizes : Series
+            Size categories for companies (small/medium/large)
+
+        Returns
+        -------
+        Series
+            Compatibility scores between 0 and 1
+        """
+        size_map = {"small": 0, "medium": 1, "large": 2}
+
+        def _score(cs, ps):
+            a = size_map.get(cs, 0)
+            b = size_map.get(ps, 0)
+            if a == b:
+                return 1.0
+            if abs(a - b) == 1:
+                return 0.5
+            return 0.0
+
+        scores = [
+            _score(c, p) for c, p in zip(club_sizes, comp_sizes)
+        ]
+        return pd.Series(scores, name="size_match")
+
+    @staticmethod
+    def calculate_industry_affinity(
+            sport_types: pd.Series,
+            industries: pd.Series
+    ) -> pd.Series:
+        """
+        Calculate industry-sport affinity score.
+
+        Returns 1.0 if any sport in a club's sport_types list appears
+        in the company's industry description.
+
+        Parameters
+        ----------
+        sport_types : Series
+            Lists of sport types for each club
+        industries : Series
+            Industry descriptions for companies
+
+        Returns
+        -------
+        Series
+            Binary affinity scores (0.0 or 1.0)
+        """
+
+        def _affinity(sports, industry):
+            if not isinstance(sports, list):
+                return 0.0
+            if not isinstance(industry, str):
+                return 0.0
+            return 1.0 if any(sp.lower() in industry.lower() for sp in sports) else 0.0
+
+        affinities = [
+            _affinity(s, i) for s, i in zip(sport_types, industries)
+        ]
+        return pd.Series(affinities, name="industry_sport_affinity")
+
+    @staticmethod
+    def calculate_growth_rate(
+            companies_df: pd.DataFrame
+    ) -> pd.Series:
+        """
+        Calculate company growth rate.
+
+        Currently a placeholder returning zeros; implement with actual
+        growth calculation when time-series data becomes available.
+
+        Parameters
+        ----------
+        companies_df : DataFrame
+            Company data including relevant growth metrics
+
+        Returns
+        -------
+        Series
+            Growth rate scores
+        """
+        return pd.Series(0.0, index=companies_df.index, name="growth_rate")
+
+    @staticmethod
+    def urban_rural_compatibility(
+            club_loc: pd.Series,
+            comp_loc: pd.Series
+    ) -> pd.Series:
+        """
+        Calculate location type compatibility.
+
+        Returns 1.0 if club and company share the same location_type
+        (e.g., both urban or both rural), 0.0 otherwise.
+
+        Parameters
+        ----------
+        club_loc : Series
+            Location types for clubs
+        comp_loc : Series
+            Location types for companies
+
+        Returns
+        -------
+        Series
+            Binary compatibility scores (0.0 or 1.0)
+        """
+        compat = [
+            1.0 if cl == cp else 0.0
+            for cl, cp in zip(club_loc, comp_loc)
+        ]
+        return pd.Series(compat, name="urban_rural_match")
+
+    @classmethod
+    def make_pair_features(cls, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create a feature DataFrame for club–company pairs for the matching model.
+
+        This method is primarily used by the training pipeline. For production
+        recommendations, use create_features() instead.
+
+        Parameters
+        ----------
+        df : DataFrame
+            DataFrame with club and company attributes merged into single rows.
+            Required columns include:
+              - 'club_lat', 'club_lon', 'company_lat', 'company_lon'
+              - 'club_size', 'company_size'
+              - 'revenue_ksek', 'employees'
+
+        Returns
+        -------
+        DataFrame
+            Features for each club-company pair:
+              - distance_km: exact geodesic distance
+              - size_match: 1.0 if same bucket, 0.5 if adjacent, else 0.0
+              - rev_per_emp: revenue per employee
+              - rev_per_emp_normalized: scaled to [0,1] if std > 0
+              - distance_score: exp(−distance_km/50) decay
+        """
+        features: Dict[str, pd.Series] = {}
+
+        # Distance feature
+        if all(
+                col in df.columns
+                for col in ["club_lat", "club_lon", "company_lat", "company_lon"]
+        ):
+            features["distance_km"] = df.apply(
+                lambda r: cls.calculate_distance_km(
+                    r["club_lat"],
+                    r["club_lon"],
+                    r["company_lat"],
+                    r["company_lon"],
+                ),
+                axis=1,
+            )
+
+        # Size compatibility
+        if "club_size" in df.columns and "company_size" in df.columns:
+            size_map = {"small": 0, "medium": 1, "large": 2}
+
+            def _size_score(row: pd.Series) -> float:
+                a = size_map.get(row["club_size"], 0)
+                b = size_map.get(row["company_size"], 0)
+                if a == b:
+                    return 1.0
+                if abs(a - b) == 1:
+                    return 0.5
+                return 0.0
+
+            features["size_match"] = df.apply(_size_score, axis=1)
+
+        # Revenue per employee
+        if "revenue_ksek" in df.columns and "employees" in df.columns:
+            rev_per_emp = df["revenue_ksek"] * 1000 / df["employees"].clip(lower=1)
+            features["rev_per_emp"] = rev_per_emp
+            if rev_per_emp.std() > 0:
+                features["rev_per_emp_normalized"] = (
+                                                             rev_per_emp - rev_per_emp.min()
+                                                     ) / (rev_per_emp.max() - rev_per_emp.min())
+
+        # Exponential distance score
+        if "distance_km" in features:
+            features["distance_score"] = np.exp(-features["distance_km"] / 50)
+
+        return pd.DataFrame(features)
+
+    def create_features(
+            self,
+            clubs_df: pd.DataFrame,
+            companies_df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Build a comprehensive feature DataFrame for each club–company pair.
+
+        This is the primary method for generating features in the recommendation
+        system, supporting a wider range of features than make_pair_features().
+
+        Parameters
+        ----------
+        clubs_df : DataFrame
+            Club data with equal rows to companies_df
+        companies_df : DataFrame
+            Company data with equal rows to clubs_df
+
+        Expected columns include:
+            ['lat','lon'], 'size_bucket', 'sport_types',
+            'industry', 'revenue_ksek', 'employees',
+            'founded_year', 'location_type'
+
+        Returns
+        -------
+        DataFrame
+            Complete feature set for ranking and recommendations
+        """
+        feats: Dict[str, pd.Series] = {}
+
+        # 1) Distance & decay
+        if {"lat", "lon"}.issubset(clubs_df.columns) and {"lat", "lon"}.issubset(companies_df.columns):
+            club_coords = clubs_df[["lat", "lon"]]
+            comp_coords = companies_df[["lat", "lon"]]
+            feats["distance_km"] = self.calculate_distance(club_coords, comp_coords)
+            feats["distance_score"] = np.exp(-feats["distance_km"] / 50)
+
+        # 2) Size match
+        if "size_bucket" in clubs_df.columns and "size_bucket" in companies_df.columns:
+            feats["size_match"] = self.calculate_size_match(
+                clubs_df["size_bucket"], companies_df["size_bucket"]
+            )
+
+        # 3) Industry affinity
+        if "sport_types" in clubs_df.columns and "industry" in companies_df.columns:
+            feats["industry_sport_affinity"] = self.calculate_industry_affinity(
+                clubs_df["sport_types"], companies_df["industry"]
+            )
+
+        # 4) Revenue per employee
+        if "revenue_ksek" in companies_df.columns and "employees" in companies_df.columns:
+            rev_per_emp = (
+                    companies_df["revenue_ksek"] * 1000
+                    / companies_df["employees"].clip(lower=1)
+            )
+            feats["rev_per_emp"] = rev_per_emp.rename("rev_per_emp")
+            if rev_per_emp.std() > 0:
+                norm = (rev_per_emp - rev_per_emp.min()) / (rev_per_emp.max() - rev_per_emp.min())
+                feats["rev_per_emp_normalized"] = norm.rename("rev_per_emp_normalized")
+
+        # 5) Company age
+        if "founded_year" in companies_df.columns:
+            feats["company_age"] = (
+                    datetime.now().year - companies_df["founded_year"]
+            ).rename("company_age")
+
+        # 6) Growth rate
+        if "employees" in companies_df.columns:
+            feats["growth_rate"] = self.calculate_growth_rate(companies_df)
+
+        # 7) Urban/rural match
+        if "location_type" in clubs_df.columns and "location_type" in companies_df.columns:
+            feats["urban_rural_match"] = self.urban_rural_compatibility(
+                clubs_df["location_type"], companies_df["location_type"]
+            )
+
+        return pd.DataFrame(feats)
+
+================================================================================
+FIL: sponsor_match/models/models.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/models/models.py
+-------------------------------
+Ensemble of ML models for sponsorship probability prediction.
+"""
+
+import logging
+from typing import Any, Dict, Union
+
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingClassifier
+from sklearn.neural_network import MLPRegressor
+import lightgbm as lgb
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+
+class SponsorshipPredictorEnsemble:
+    """
+    Holds a collection of models and provides a unified interface
+    for training and predicting sponsor-match probabilities.
+    """
+
+    def __init__(self) -> None:
+        """
+        Initialize the ensemble with default hyperparameters.
+        """
+        self.models: Dict[str, Any] = {
+            "rf": RandomForestRegressor(n_estimators=100),
+            "gbm": GradientBoostingClassifier(),
+            "lgbm": lgb.LGBMRegressor(),
+            "nn": MLPRegressor(hidden_layer_sizes=(100, 50))
+        }
+        logger.info("Initialized SponsorshipPredictorEnsemble with models: %s",
+                    list(self.models.keys()))
+
+    def train(
+        self,
+        X_train: Union[pd.DataFrame, np.ndarray],
+        y_train: Union[pd.Series, np.ndarray]
+    ) -> None:
+        """
+        Fit each model in the ensemble on the training data.
+
+        Parameters
+        ----------
+        X_train : DataFrame or ndarray
+            Feature matrix.
+        y_train : Series or ndarray
+            Binary labels (1 = sponsored before, 0 = not).
+        """
+        for name, model in self.models.items():
+            logger.info("Training model '%s'", name)
+            model.fit(X_train, y_train)
+        logger.info("All models trained successfully")
+
+    def predict_proba(
+        self,
+        X: Union[pd.DataFrame, np.ndarray]
+    ) -> np.ndarray:
+        """
+        Return the average predicted probability of sponsorship
+        across all models in the ensemble.
+
+        Parameters
+        ----------
+        X : DataFrame or ndarray
+            Feature matrix.
+
+        Returns
+        -------
+        ndarray
+            Array of probabilities, one per row in X.
+        """
+        prob_list = []
+        for name, model in self.models.items():
+            if hasattr(model, "predict_proba"):
+                probs = model.predict_proba(X)[:, 1]
+                logger.debug("Model '%s' provided predict_proba output", name)
+            else:
+                # fallback: normalize regression output into [0,1]
+                raw = model.predict(X)
+                min_, max_ = raw.min(), raw.max()
+                if max_ - min_ > 1e-8:
+                    probs = (raw - min_) / (max_ - min_)
+                else:
+                    probs = np.zeros_like(raw)
+                logger.debug("Model '%s' provided normalized regression output", name)
+            prob_list.append(probs)
+
+        # Ensemble by averaging
+        ensemble_probs = np.mean(prob_list, axis=0)
+        logger.info("Ensembled probabilities computed (shape=%s)", ensemble_probs.shape)
+        return ensemble_probs
+
+
+================================================================================
+FIL: sponsor_match/data/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: sponsor_match/data/ingest_associations.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/data/ingest_associations.py
+-----------------------------------------
+Read a geocoded associations CSV and append into the `clubs` table.
+"""
+
+import logging
+from argparse import ArgumentParser
+from pathlib import Path
+
+import pandas as pd
+from sqlalchemy import create_engine
+
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+def main(csv_path: Path, db_url: str | None) -> None:
+    # Determine DB URL (fallback to env if not passed)
+    url = db_url or None
+    if not url:
+        logger.error("No database URL provided. Use --db-url or set MYSQL_URL_OVERRIDE.")
+        raise SystemExit(1)
+
+    engine = create_engine(url)
+
+    # Read CSV
+    logger.info("Reading %s", csv_path)
+    df = pd.read_csv(csv_path)
+    logger.info("Read %d rows from %s", len(df), csv_path)
+
+    # We're inserting into `clubs`, not `companies`
+    table_name = "clubs"
+
+    # Drop `id` if present; the clubs table has its own AUTO_INCREMENT primary key
+    if "id" in df.columns:
+        logger.info("Dropping 'id' column before insert into %s", table_name)
+        df = df.drop(columns=["id"])
+
+    # Write to clubs
+    logger.info("Writing %d rows into `%s`", len(df), table_name)
+    df.to_sql(table_name, engine, if_exists="append", index=False)
+
+if __name__ == "__main__":
+    p = ArgumentParser(description="Ingest geocoded associations into DB")
+    p.add_argument(
+        "--db-url", "-d", default="",
+        help="SQLAlchemy URL for your MySQL database"
+    )
+    p.add_argument(
+        "csv_path",
+        type=Path,
+        help="Path to geocoded associations CSV"
+    )
+    args = p.parse_args()
+    main(args.csv_path, args.db_url)
+
+
+================================================================================
+FIL: sponsor_match/data/ingest_csv.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/data/ingest_csv.py
+--------------------------------
+Loads the CSV file data/bolag_1_500_sorted_with_year.csv
+into the MariaDB table sponsor_registry.companies.
+
+Usage:
+    python -m sponsor_match.data.ingest_csv
+"""
+
+import sys
+import logging
+from pathlib import Path
+
+import pandas as pd
+from sqlalchemy import text
+from sponsor_match.core.db import get_engine
+
+# Configure logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+
+def main() -> None:
+    """Read, transform, and load company data from CSV into MySQL."""
+    # 1. Locate CSV file
+    project_root = Path(__file__).resolve().parents[2]
+    csv_path = project_root / "data" / "bolag_1_500_sorted_with_year.csv"
+
+    # 2. Read CSV with error handling
+    try:
+        df = pd.read_csv(csv_path, encoding='utf-8')
+        logger.info("Loaded %d rows from %s", len(df), csv_path)
+    except FileNotFoundError:
+        logger.error("CSV file not found at %s", csv_path)
+        sys.exit(1)
+    except pd.errors.EmptyDataError:
+        logger.error("CSV file at %s is empty", csv_path)
+        sys.exit(1)
+    except Exception as e:
+        logger.exception("Unexpected error reading CSV: %s", e)
+        sys.exit(1)
+
+    # 3. Validate expected columns
+    expected = {"Företagsnamn", "Postadress", "Omsättning (tkr)", "Anställda", "År"}
+    missing = expected - set(df.columns)
+    if missing:
+        logger.error("Missing required columns: %s. Found: %s", missing, list(df.columns))
+        sys.exit(1)
+
+    # 4. Rename and compute fields
+    df = df.rename(columns={
+        "Företagsnamn":     "name",
+        "Postadress":       "address",
+        "Omsättning (tkr)": "revenue_ksek",
+        "Anställda":        "employees",
+        "År":               "year",
+    })
+    df["rev_per_emp"] = (df["revenue_ksek"] * 1000) / df["employees"].clip(lower=1)
+
+    # 5. Bucket by revenue
+    bins = [0, 5_000_000, 50_000_000, float("inf")]
+    labels = ["small", "medium", "large"]
+    df["size_bucket"] = pd.cut(df["revenue_ksek"] * 1000, bins=bins, labels=labels)
+
+    # 6. Select only columns for insertion
+    df = df[["name", "address", "revenue_ksek", "employees", "year", "rev_per_emp", "size_bucket"]]
+
+    # 7. Write to MariaDB
+    engine = get_engine()
+    ddl = """
+    CREATE TABLE IF NOT EXISTS companies (
+      comp_id      BIGINT AUTO_INCREMENT PRIMARY KEY,
+      name         TEXT,
+      address      TEXT,
+      revenue_ksek DOUBLE,
+      employees    INT,
+      year         INT,
+      rev_per_emp  DOUBLE,
+      size_bucket  ENUM('small','medium','large'),
+      industry     TEXT,
+      lat          DOUBLE,
+      lon          DOUBLE
+    ) CHARACTER SET utf8mb4;
+    """
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(ddl))
+            existing = conn.execute(text("SELECT COUNT(*) FROM companies")).scalar() or 0
+            logger.info("companies table contains %d rows", existing)
+
+            df.to_sql("companies", conn, if_exists="append", index=False)
+            logger.info("Appended %d rows to companies", len(df))
+    except Exception as e:
+        logger.exception("Database error during ingest: %s", e)
+        sys.exit(1)
+
+    logger.info("✅ Ingestion complete. Total rows now: %d", existing + len(df))
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: scripts/__init__.py
+================================================================================
+
+# makes scripts a package
+
+
+================================================================================
+FIL: scripts/build_associations_csv.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+scripts/build_associations_csv.py
+---------------------------------
+Read a CSV of club associations (with no lat/lon), geocode addresses to lat/lon,
+and write out a new CSV with columns ['id','name','member_count','address','lat','lon','size_bucket'].
+"""
+import logging
+from argparse import ArgumentParser
+from pathlib import Path
+from typing import Tuple, Optional
+
+import pandas as pd
+from geopy.exc import GeocoderServiceError, GeopyError
+from geopy.extra.rate_limiter import RateLimiter
+from geopy.geocoders import Nominatim
+
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+def try_geocode(address: str, geocode: RateLimiter) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Attempt to geocode `address` (Göteborg, Sweden) with fallbacks.
+    Returns (lat, lon) or (None, None).
+    """
+    variants = [
+        address,
+        f"{address}, Sweden",
+        address.replace("Västra Frölunda", "Göteborg"),
+        (address.split(",", 1)[1].strip() if "," in address else ""),
+    ]
+    for query in variants:
+        if not query:
+            continue
+        try:
+            loc = geocode(query, country_codes="se", exactly_one=True)
+        except (GeocoderServiceError, GeopyError) as e:
+            logger.debug("Geocoding failed for %r: %s", query, e)
+            continue
+        if loc:
+            return loc.latitude, loc.longitude
+    return None, None
+
+def main(input_csv: Path, output_csv: Path) -> None:
+    if not input_csv.exists():
+        logger.error("Input CSV not found: %s", input_csv)
+        raise SystemExit(1)
+
+    # If we've already built it, skip
+    if output_csv.exists():
+        logger.info("Found existing %s – skipping geocoding", output_csv)
+        return
+
+    logger.info("Loading %s", input_csv)
+    df = pd.read_csv(input_csv)
+
+    # Inject lat/lon columns if missing
+    if "lat" not in df.columns:
+        df["lat"] = pd.NA
+    if "lon" not in df.columns:
+        df["lon"] = pd.NA
+
+    # Prepare geocoder
+    geo = Nominatim(user_agent="sponsor_match_geo", timeout=10, scheme="https")
+    geocode = RateLimiter(geo.geocode, min_delay_seconds=1.1)
+
+    # Geocode every row that has missing lat or lon
+    missing = df["lat"].isna() | df["lon"].isna()
+    logger.info("Need geocoding for %d/%d rows", missing.sum(), len(df))
+    failures = []
+    for idx, row in df[missing].iterrows():
+        lat, lon = try_geocode(row["address"], geocode)
+        if lat is None:
+            failures.append(row["address"])
+        df.at[idx, "lat"] = lat
+        df.at[idx, "lon"] = lon
+
+    if failures:
+        logger.warning("Failed geocoding %d addresses; leaving NaN", len(failures))
+
+    # Recompute size_bucket
+    bins = [0, 100, 500, float("inf")]
+    labels = ["small", "medium", "large"]
+    df["size_bucket"] = pd.cut(df["member_count"], bins=bins, labels=labels)
+
+    # Write out
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(output_csv, index=False)
+    logger.info("Wrote %d rows → %s", len(df), output_csv)
+
+if __name__ == "__main__":
+    p = ArgumentParser(description="Geocode club associations")
+    p.add_argument("input_csv", type=Path, help="Raw CSV (no lat/lon)")
+    p.add_argument(
+        "-o", "--output", type=Path,
+        help="Out CSV (default: same dir, suffix '_with_coords.csv')"
+    )
+    args = p.parse_args()
+    out = args.output or args.input_csv.with_name(f"{args.input_csv.stem}_with_coords.csv")
+    main(args.input_csv, out)
+
+
+================================================================================
+FIL: utils/list_project_files.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+utils/list_project_files.py
+----------------------
+Recursively scans the entire project root (one level up from this script), skips
+directories .venv and .venv312 as well as __pycache__ and .git, and writes
+out both filenames and entire contents for file types:
+.py, .csv, .json, .toml, .md and .yml
+
+Usage:
+    cd /home/user/SponsorMatchAI
+    python utils/list_project_files.py [--output CUSTOM_PATH]
+
+Output:
+    utils_output/project_dump.txt (default)
+"""
+
+import argparse
+import logging
+import os
+from pathlib import Path
+from typing import List
+
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+EXCLUDE_DIRS = {'.venv', '.venv312', '__pycache__', '.git'}
+
+
+def collect_and_dump(root: Path, exts: List[str], out_path: Path) -> None:
+    """
+    Go through root and all subdirectories, collect files with suffixes in exts,
+    skip EXCLUDE_DIRS, and write filepath + content to out_path.
+    """
+    with out_path.open("w", encoding="utf-8") as f:
+        for dirpath, dirnames, filenames in os.walk(root):
+            # Exclude unwanted directories
+            dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS]
+            for fn in sorted(filenames):
+                if any(fn.lower().endswith(ext) for ext in exts):
+                    file_path = Path(dirpath) / fn
+                    f.write("=" * 80 + "\n")
+                    f.write(f"FIL: {file_path.relative_to(root)}\n")
+                    f.write("=" * 80 + "\n\n")
+                    try:
+                        content = file_path.read_text(encoding="utf-8")
+                        f.write(content)
+                    except Exception as e:
+                        f.write(f"<Could not read file: {e}>\n")
+                    f.write("\n\n")
+    size_kb = out_path.stat().st_size / 1024
+    logger.info("Created dump file %s (%.1f KB)", out_path, size_kb)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Create dump of important project files with full content."
+    )
+    parser.add_argument(
+        "--output", "-o",
+        type=Path,
+        default=None,
+        help="Output file path (default: utils_output/project_dump.txt)"
+    )
+    args = parser.parse_args()
+
+    # Since we're now in utils/ directory, need to get the project root (one level up)
+    project_root = Path(__file__).parent.parent
+
+    # Create utils_output directory if it doesn't exist
+    outputs_dir = project_root / "utils_output"
+    outputs_dir.mkdir(exist_ok=True)
+
+    # Set default output path if not specified
+    output_path = args.output if args.output else outputs_dir / "project_dump.txt"
+
+    extensions = [".py", ".csv", ".json", ".toml", ".md", ".yml"]
+    logger.info("Scanning %s for %s files...", project_root, extensions)
+    collect_and_dump(project_root, extensions, output_path)
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: .pytest_cache/README.md
+================================================================================
+
+# pytest cache directory #
+
+This directory contains data from the pytest's cache plugin,
+which provides the `--lf` and `--ff` options, as well as the `cache` fixture.
+
+**Do not** commit this to version control.
+
+See [the docs](https://docs.pytest.org/en/stable/how-to/cache.html) for more information.
+
+
+================================================================================
+FIL: logs/logger.py
+================================================================================
+
+# sponsor_match/utils/logger.py
+import logging
+import os
+
+def setup_logger(name, log_file=None, level=logging.INFO):
+    """
+    Set up a logger with both file and console handlers
+
+    Args:
+        name: Logger name (usually __name__ from calling module)
+        log_file: Optional log file path
+        level: Logging level
+
+    Returns:
+        Configured logger instance
+    """
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    # File handler (if specified)
+    if log_file:
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    return logger
+
+
+================================================================================
+FIL: debug/debug_report_20250514_182948.json
+================================================================================
+
+{
+  "timestamp": "2025-05-14T18:29:48.158760",
+  "steps": [
+    {
+      "name": "Database Connection",
+      "timestamp": "2025-05-14T18:29:47.290579",
+      "success": false,
+      "error": "type object 'Config' has no attribute 'MYSQL_URL'"
+    },
+    {
+      "name": "Entity Loading",
+      "timestamp": "2025-05-14T18:29:47.472970",
+      "success": false,
+      "error": "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+    },
+    {
+      "name": "Service Layer",
+      "timestamp": "2025-05-14T18:29:47.531033",
+      "success": false,
+      "error": "SponsorMatchService.__init__() missing 2 required positional arguments: 'db_engine' and 'cluster_models'"
+    },
+    {
+      "name": "Distance Calculation",
+      "timestamp": "2025-05-14T18:29:47.531844",
+      "success": true,
+      "error": null
+    },
+    {
+      "name": "Search Functionality",
+      "timestamp": "2025-05-14T18:29:47.532722",
+      "success": false,
+      "error": "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+    },
+    {
+      "name": "UI Integration",
+      "timestamp": "2025-05-14T18:29:48.158534",
+      "success": true,
+      "error": null
+    }
+  ],
+  "errors": [
+    [
+      "Database Connection",
+      "type object 'Config' has no attribute 'MYSQL_URL'"
+    ],
+    [
+      "Entity Loading",
+      "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+    ],
+    [
+      "Service Layer",
+      "SponsorMatchService.__init__() missing 2 required positional arguments: 'db_engine' and 'cluster_models'"
+    ],
+    [
+      "Search Functionality",
+      "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+    ]
+  ],
+  "data_snapshots": {
+    "Distance Calculation": {
+      "distance": 1.2774467019526492
+    },
+    "UI Integration": {
+      "methods": [
+        "clubs_df",
+        "engine",
+        "render_main_page"
+      ],
+      "search_methods": []
+    }
+  }
+}
+
+================================================================================
+FIL: debug/discover_structure.py
+================================================================================
+
+# debug/discover_structure.py
+"""
+Module Structure Discovery Tool
+
+This script helps identify the actual structure of your SponsorMatchAI project
+so we can fix import errors in the test scripts.
+"""
+
+import os
+import sys
+from pathlib import Path
+import ast
+import json
+
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+
+def find_python_files(directory):
+    """Find all Python files in the directory"""
+    python_files = []
+    for root, dirs, files in os.walk(directory):
+        # Skip virtual environments and cache
+        dirs[:] = [d for d in dirs if d not in {'venv', '.venv', '__pycache__', '.git'}]
+        for file in files:
+            if file.endswith('.py'):
+                python_files.append(Path(root) / file)
+    return python_files
+
+
+def analyze_file(filepath):
+    """Analyze a Python file to find classes and functions"""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        tree = ast.parse(content)
+
+        functions = []
+        classes = []
+        imports = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                functions.append(node.name)
+            elif isinstance(node, ast.ClassDef):
+                classes.append(node.name)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.append(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    imports.append(f"from {node.module}")
+
+        return {
+            'functions': functions,
+            'classes': classes,
+            'imports': imports
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def main():
+    print("SponsorMatchAI Structure Discovery")
+    print("=" * 40)
+
+    sponsor_match_dir = project_root / 'sponsor_match'
+
+    if not sponsor_match_dir.exists():
+        print(f"Error: sponsor_match directory not found at {sponsor_match_dir}")
+        return
+
+    print(f"Analyzing {sponsor_match_dir}...\n")
+
+    # Find all Python files
+    python_files = find_python_files(sponsor_match_dir)
+
+    # Analyze structure
+    structure = {}
+
+    for file in python_files:
+        relative_path = file.relative_to(project_root)
+        analysis = analyze_file(file)
+
+        if 'error' not in analysis:
+            structure[str(relative_path)] = analysis
+            print(f"\n{relative_path}")
+
+            if analysis['classes']:
+                print(f"  Classes: {', '.join(analysis['classes'][:5])}")
+
+            if analysis['functions']:
+                print(f"  Functions: {', '.join(analysis['functions'][:5])}")
+                if len(analysis['functions']) > 5:
+                    print(f"    ... and {len(analysis['functions']) - 5} more")
+
+    # Look for specific modules we need
+    print("\n\nSearching for key components:")
+    print("-" * 30)
+
+    key_patterns = {
+        'database': ['db', 'database', 'connection'],
+        'config': ['config', 'settings', 'Config'],
+        'distance': ['distance', 'calculate_distance', 'haversine'],
+        'matching': ['match', 'matcher', 'find_matches', 'search'],
+        'streamlit': ['app', 'ui', 'streamlit'],
+        'ingest': ['ingest', 'import', 'parse']
+    }
+
+    for component, patterns in key_patterns.items():
+        print(f"\n{component.upper()}:")
+        found = False
+        for filepath, content in structure.items():
+            for pattern in patterns:
+                if pattern in filepath.lower():
+                    print(f"  File: {filepath}")
+                    found = True
+                    break
+
+                for func in content.get('functions', []):
+                    if pattern in func.lower():
+                        print(f"  Function '{func}' in {filepath}")
+                        found = True
+
+                for cls in content.get('classes', []):
+                    if pattern in cls.lower():
+                        print(f"  Class '{cls}' in {filepath}")
+                        found = True
+
+        if not found:
+            print(f"  Not found - this component might not exist")
+
+    # Save the structure for reference
+    output_file = Path(__file__).parent / 'project_structure.json'
+
+    with open(output_file, 'w') as f:
+        json.dump(structure, f, indent=2)
+
+    print(f"\n\nStructure saved to: {output_file}")
+    print("\nNext steps:")
+    print("1. Share the output with me")
+    print("2. I'll create corrected versions of the test scripts")
+    print("3. We'll fix the import errors properly")
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: debug/project_structure.json
+================================================================================
+
+{
+  "sponsor_match/features.py": {
+    "functions": [
+      "calculate_distance_km",
+      "add_distance",
+      "bucket_assoc_size",
+      "make_pair_features",
+      "_size_score"
+    ],
+    "classes": [],
+    "imports": [
+      "from typing",
+      "numpy",
+      "pandas",
+      "from geopy.distance",
+      "from pandas"
+    ]
+  },
+  "sponsor_match/services/recommendation.py": {
+    "functions": [
+      "__init__",
+      "recommend"
+    ],
+    "classes": [
+      "RecommendationService"
+    ],
+    "imports": [
+      "logging",
+      "from typing",
+      "from sponsor_match.core.db",
+      "from sponsor_match.services.service_v2"
+    ]
+  },
+  "sponsor_match/services/service_v2.py": {
+    "functions": [
+      "__init__",
+      "_get_club_by_id",
+      "_find_matching_companies",
+      "_calculate_scores",
+      "recommend"
+    ],
+    "classes": [
+      "RecommendationRequest",
+      "RecommendationResult",
+      "SponsorMatchService"
+    ],
+    "imports": [
+      "logging",
+      "uuid",
+      "from dataclasses",
+      "from typing",
+      "pandas",
+      "numpy",
+      "from geopy.distance"
+    ]
+  },
+  "sponsor_match/cli/__init__.py": {
+    "functions": [],
+    "classes": [],
+    "imports": []
+  },
+  "sponsor_match/cli/train_matcher.py": {
+    "functions": [
+      "main"
+    ],
+    "classes": [],
+    "imports": [
+      "logging",
+      "from argparse",
+      "from pathlib",
+      "pandas",
+      "joblib",
+      "from sklearn.model_selection",
+      "from sklearn.ensemble",
+      "from sponsor_match.features"
+    ]
+  },
+  "sponsor_match/cli/db_init.py": {
+    "functions": [
+      "main"
+    ],
+    "classes": [],
+    "imports": [
+      "logging",
+      "from argparse",
+      "from textwrap",
+      "from sponsor_match.core.db"
+    ]
+  },
+  "sponsor_match/ui/app_v2.py": {
+    "functions": [
+      "main",
+      "__init__",
+      "_load_clubs",
+      "_marker_color",
+      "_club_popup",
+      "_company_popup",
+      "_radar_chart",
+      "_run_search",
+      "_render_recommendations",
+      "_render_analytics",
+      "_render_map",
+      "_render_insights",
+      "render_main_page"
+    ],
+    "classes": [
+      "SponsorMatchUI"
+    ],
+    "imports": [
+      "logging",
+      "from pathlib",
+      "joblib",
+      "pandas",
+      "plotly.express",
+      "plotly.graph_objects",
+      "streamlit",
+      "from folium",
+      "from folium.map",
+      "from folium.plugins",
+      "from streamlit_folium",
+      "from sponsor_match.core.config",
+      "from sponsor_match.core.db",
+      "from sponsor_match.services.service_v2"
+    ]
+  },
+  "sponsor_match/ui/__init__.py": {
+    "functions": [],
+    "classes": [],
+    "imports": []
+  },
+  "sponsor_match/core/config.py": {
+    "functions": [],
+    "classes": [
+      "Config"
+    ],
+    "imports": [
+      "os",
+      "from dataclasses",
+      "from pathlib",
+      "from dotenv"
+    ]
+  },
+  "sponsor_match/core/logger.py": {
+    "functions": [
+      "setup_logger"
+    ],
+    "classes": [],
+    "imports": [
+      "logging",
+      "sys",
+      "from pathlib"
+    ]
+  },
+  "sponsor_match/core/db.py": {
+    "functions": [
+      "get_engine"
+    ],
+    "classes": [],
+    "imports": [
+      "os",
+      "logging",
+      "from pathlib",
+      "from dotenv",
+      "from sqlalchemy",
+      "from sqlalchemy.engine",
+      "from sponsor_match.core.config"
+    ]
+  },
+  "sponsor_match/models/clustering.py": {
+    "functions": [
+      "train_kmeans_for_bucket",
+      "main"
+    ],
+    "classes": [],
+    "imports": [
+      "logging",
+      "from pathlib",
+      "joblib",
+      "pandas",
+      "from sklearn.cluster",
+      "from sponsor_match.core.db",
+      "from sponsor_match.core.config"
+    ]
+  },
+  "sponsor_match/models/club_extended.py": {
+    "functions": [],
+    "classes": [
+      "ExtendedClub"
+    ],
+    "imports": [
+      "from dataclasses",
+      "from typing"
+    ]
+  },
+  "sponsor_match/models/__init__.py": {
+    "functions": [],
+    "classes": [],
+    "imports": []
+  },
+  "sponsor_match/models/models.py": {
+    "functions": [
+      "__init__",
+      "train",
+      "predict_proba"
+    ],
+    "classes": [
+      "SponsorshipPredictorEnsemble"
+    ],
+    "imports": [
+      "logging",
+      "from typing",
+      "numpy",
+      "pandas",
+      "from sklearn.ensemble",
+      "from sklearn.neural_network",
+      "lightgbm"
+    ]
+  },
+  "sponsor_match/models/entities.py": {
+    "functions": [],
+    "classes": [
+      "Club",
+      "Company"
+    ],
+    "imports": [
+      "from dataclasses",
+      "from typing"
+    ]
+  },
+  "sponsor_match/models/features.py": {
+    "functions": [
+      "calculate_distance",
+      "calculate_size_match",
+      "calculate_industry_affinity",
+      "calculate_growth_rate",
+      "urban_rural_compatibility",
+      "create_features",
+      "_dist",
+      "_score",
+      "_affinity"
+    ],
+    "classes": [
+      "FeatureEngineer"
+    ],
+    "imports": [
+      "numpy",
+      "pandas",
+      "from datetime",
+      "from typing",
+      "from geopy.distance"
+    ]
+  },
+  "sponsor_match/data/__init__.py": {
+    "functions": [],
+    "classes": [],
+    "imports": []
+  },
+  "sponsor_match/data/ingest_associations.py": {
+    "functions": [
+      "main"
+    ],
+    "classes": [],
+    "imports": [
+      "logging",
+      "from argparse",
+      "from pathlib",
+      "pandas",
+      "from sqlalchemy"
+    ]
+  },
+  "sponsor_match/data/ingest_csv.py": {
+    "functions": [
+      "main"
+    ],
+    "classes": [],
+    "imports": [
+      "sys",
+      "logging",
+      "from pathlib",
+      "pandas",
+      "from sqlalchemy",
+      "from sponsor_match.core.db"
+    ]
+  }
+}
+
+================================================================================
+FIL: debug/search_issue_debugger.py
+================================================================================
+
+# debug/search_issue_debugger.py
+"""
+Search Issue Debugger for SponsorMatchAI
+
+This script helps diagnose the specific search/filter issue you're experiencing.
+It traces through the search process step by step, logging what happens at each stage.
+
+Usage: python debug/search_issue_debugger.py
+
+This debugger is specifically designed for your app's architecture where entities
+are dataclasses, not SQLAlchemy ORM models.
+"""
+
+import sys
+import logging
+import json
+from pathlib import Path
+from datetime import datetime
+import pandas as pd
+import traceback
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+# Configure detailed logging
+log_file = Path(__file__).parent / f"search_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Disable other loggers to reduce noise
+for logger_name in ['matplotlib', 'PIL', 'urllib3', 'sqlalchemy', 'mysql']:
+    logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
+class SearchDebugger:
+    """
+    A systematic debugger for the search functionality.
+    We'll trace through each step and log everything that happens.
+    """
+
+    def __init__(self):
+        self.steps_completed = []
+        self.data_snapshots = {}
+        self.errors = []
+
+    def log_step(self, step_name, success=True, data=None, error=None):
+        """Log the result of each debugging step"""
+        step_info = {
+            'name': step_name,
+            'timestamp': datetime.now().isoformat(),
+            'success': success,
+            'error': str(error) if error else None
+        }
+
+        self.steps_completed.append(step_info)
+
+        if data is not None:
+            self.data_snapshots[step_name] = data
+
+        if success:
+            logger.info(f"✓ {step_name} completed successfully")
+        else:
+            logger.error(f"✗ {step_name} failed: {error}")
+            self.errors.append((step_name, error))
+
+    def debug_config_and_connection(self):
+        """Step 1: Check configuration and database connection"""
+        logger.info("=" * 60)
+        logger.info("STEP 1: Testing Configuration and Database Connection")
+        logger.info("=" * 60)
+
+        try:
+            from sponsor_match.core.config import Config
+            logger.info(f"Config imported successfully")
+
+            # Check what attributes Config actually has
+            config_attrs = [attr for attr in dir(Config) if not attr.startswith('_')]
+            logger.info(f"Config attributes: {config_attrs}")
+
+            # Find database-related attributes
+            db_attrs = [attr for attr in config_attrs if 'DB' in attr or 'DATABASE' in attr or 'MYSQL' in attr]
+            logger.info(f"Database-related config: {db_attrs}")
+
+            from sponsor_match.core.db import get_engine
+            from sqlalchemy import text
+
+            engine = get_engine()
+            logger.info(f"Database engine created: {engine}")
+
+            # Test connection with proper SQLAlchemy 2.0 syntax
+            with engine.connect() as conn:
+                result = conn.execute(text("SELECT VERSION()"))
+                version = result.scalar()
+                logger.info(f"Connected to MySQL version: {version}")
+
+                # Get table list
+                result = conn.execute(text("SHOW TABLES"))
+                tables = [row[0] for row in result]
+                self.log_step("Database Connection", success=True,
+                              data={'tables': tables, 'version': version})
+
+        except Exception as e:
+            self.log_step("Database Connection", success=False, error=e)
+            traceback.print_exc()
+            return False
+
+        return True
+
+    def debug_entity_loading(self):
+        """Step 2: Test loading clubs and companies from database tables"""
+        logger.info("=" * 60)
+        logger.info("STEP 2: Testing Entity Loading")
+        logger.info("=" * 60)
+
+        try:
+            from sponsor_match.core.db import get_engine
+            from sponsor_match.models.entities import Club, Company
+            from sqlalchemy import text
+
+            engine = get_engine()
+
+            with engine.connect() as conn:
+                # Load clubs data using raw SQL
+                logger.info("Loading clubs from database...")
+                result = conn.execute(text("""
+                    SELECT id, name, member_count, address, lat, lon, size_bucket, founded_year
+                    FROM clubs
+                """))
+
+                clubs_data = result.fetchall()
+                logger.info(f"Loaded {len(clubs_data)} clubs from database")
+
+                # Create Club dataclasses
+                clubs = []
+                for row in clubs_data[:5]:  # Just first 5 for debugging
+                    club = Club(
+                        id=row[0],
+                        name=row[1],
+                        member_count=row[2],
+                        address=row[3],
+                        lat=row[4],
+                        lon=row[5],
+                        size_bucket=row[6],
+                        founded_year=row[7]
+                    )
+                    clubs.append(club)
+
+                logger.info(f"Created {len(clubs)} Club dataclass instances")
+
+                # Load companies data
+                logger.info("Loading companies from database...")
+                result = conn.execute(text("""
+                    SELECT id, orgnr, name, revenue_ksek, employees, year, size_bucket, lat, lon, industry
+                    FROM companies
+                """))
+
+                companies_data = result.fetchall()
+                logger.info(f"Loaded {len(companies_data)} companies from database")
+
+                # Check size distribution
+                result = conn.execute(text("""
+                    SELECT size_bucket, COUNT(*) as count
+                    FROM companies
+                    GROUP BY size_bucket
+                """))
+                size_dist = dict(result.fetchall())
+                logger.info(f"Company size distribution: {size_dist}")
+
+                self.log_step("Entity Loading", success=True,
+                              data={'club_count': len(clubs_data),
+                                    'company_count': len(companies_data),
+                                    'size_distribution': size_dist})
+
+        except Exception as e:
+            self.log_step("Entity Loading", success=False, error=e)
+            traceback.print_exc()
+            return False
+
+        return True
+
+    def debug_service_layer(self):
+        """Step 3: Test the service layer with proper initialization"""
+        logger.info("=" * 60)
+        logger.info("STEP 3: Testing Service Layer")
+        logger.info("=" * 60)
+
+        try:
+            from sponsor_match.services.service_v2 import SponsorMatchService
+            from sponsor_match.core.db import get_engine
+
+            # Service requires db_engine and cluster_models
+            engine = get_engine()
+
+            # Try to load cluster models
+            cluster_models = {}
+            try:
+                import pickle
+                models_dir = project_root / "models" / "clusters"
+
+                if models_dir.exists():
+                    for model_file in models_dir.glob("*.pkl"):
+                        with open(model_file, 'rb') as f:
+                            size = model_file.stem
+                            cluster_models[size] = pickle.load(f)
+                    logger.info(f"Loaded {len(cluster_models)} cluster models")
+                else:
+                    logger.warning("Cluster models directory not found, using empty dict")
+            except Exception as e:
+                logger.warning(p
+                "Could not load cluster models: {e}")
+
+                # Initialize service
+                service = SponsorMatchService(
+                    db_engine=engine,
+                    cluster_models=cluster_models
+                )
+                logger.info("Service instance created successfully")
+
+                # List available methods
+                methods = [method for method in dir(service) if not method.startswith('_')]
+                logger.info(f"Available service methods: {methods}")
+
+                self.log_step("Service Layer", success=True, data={'methods': methods})
+
+            except Exception as e:
+                self.log_step("Service Layer", success=False, error=e)
+                traceback.print_exc()
+                return False
+
+            return True
+
+        def debug_search_functionality(self):
+            """Step 5: Debug the actual search/recommend functionality"""
+            logger.info("=" * 60)
+            logger.info("STEP 5: Testing Search/Recommendation Functionality")
+            logger.info("=" * 60)
+
+            try:
+                from sponsor_match.services.service_v2 import SponsorMatchService
+                from sponsor_match.core.db import get_engine
+                from sponsor_match.models.entities import Club
+                from sqlalchemy import text
+
+                engine = get_engine()
+                cluster_models = {}  # Empty for now
+
+                # Get a test club
+                with engine.connect() as conn:
+                    result = conn.execute(text("""
+                    SELECT id, name, member_count, address, lat, lon, size_bucket, founded_year
+                    FROM clubs
+                    LIMIT 1
+                """))
+                    club_data = result.fetchone()
+
+                    if not club_data:
+                        logger.error("No clubs found in database")
+                        return False
+
+                    # Create Club dataclass
+                    club = Club(
+                        id=club_data[0],
+                        name=club_data[1],
+                        member_count=club_data[2],
+                        address=club_data[3],
+                        lat=club_data[4],
+                        lon=club_data[5],
+                        size_bucket=club_data[6],
+                        founded_year=club_data[7]
+                    )
+
+                    logger.info(f"Testing with club: {club.name} (ID: {club.id})")
+
+                    # Create service
+                    service = SponsorMatchService(
+                        db_engine=engine,
+                        cluster_models=cluster_models
+                    )
+
+                    # Try to call the recommend method
+                    try:
+                        logger.info("Calling service.recommend()...")
+                        recommendations = service.recommend(club.id)
+                        logger.info(
+                            f"Got {len(recommendations) if hasattr(recommendations, '__len__') else '?'} recommendations")
+                        self.log_step("Search Functionality", success=True,
+                                      data={'method': 'recommend',
+                                            'club_id': club.id})
+                    except Exception as e:
+                        logger.error(f"Error in recommend: {e}")
+                        traceback.print_exc()
+                        self.log_step("Search Functionality", success=False, error=e)
+
+            except Exception as e:
+                self.log_step("Search Functionality", success=False, error=e)
+                traceback.print_exc()
+                return False
+
+            return True
+
+        def debug_ui_search_flow(self):
+            """Step 6: Debug how the UI search flow works"""
+            logger.info("=" * 60)
+            logger.info("STEP 6: Testing UI Search Flow")
+            logger.info("=" * 60)
+
+            try:
+                from sponsor_match.ui.app_v2 import SponsorMatchUI
+
+                # Create UI instance
+                ui = SponsorMatchUI()
+                logger.info("UI instance created")
+
+                # The UI has these attributes based on test output
+                logger.info(f"UI engine: {ui.engine}")
+                logger.info(f"UI clubs_df type: {type(ui.clubs_df)}")
+
+                # Try to understand how search works in the UI
+                # Look for search-related methods
+                ui_methods = [method for method in dir(ui) if not method.startswith('_')]
+                search_methods = [m for m in ui_methods if any(keyword in m.lower()
+                                                               for keyword in
+                                                               ['search', 'filter', 'recommend', 'match'])]
+                logger.info(f"Search-related UI methods: {search_methods}")
+
+                # The main page rendering
+                if hasattr(ui, 'render_main_page'):
+                    logger.info("UI has render_main_page method")
+                    # We can't actually call it without Streamlit context, but we know it exists
+
+                self.log_step("UI Search Flow", success=True)
+
+            except Exception as e:
+                self.log_step("UI Search Flow", success=False, error=e)
+                traceback.print_exc()
+                return False
+
+            return True
+
+        def generate_report(self):
+            """Generate a comprehensive debug report"""
+            logger.info("=" * 60)
+            logger.info("DEBUG REPORT SUMMARY")
+            logger.info("=" * 60)
+
+            # Summary of steps
+            successful_steps = [step for step in self.steps_completed if step['success']]
+            failed_steps = [step for step in self.steps_completed if not step['success']]
+
+            logger.info(f"Successful steps: {len(successful_steps)}")
+            logger.info(f"Failed steps: {len(failed_steps)}")
+
+            if failed_steps:
+                logger.error("\nFailed steps:")
+                for step in failed_steps:
+                    logger.error(f"  - {step['name']}: {step['error']}")
+
+            # Save detailed report
+            report = {
+                'timestamp': datetime.now().isoformat(),
+                'steps': self.steps_completed,
+                'errors': [(name, str(error)) for name, error in self.errors],
+                'data_snapshots': {k: v for k, v in self.data_snapshots.items()
+                                   if isinstance(v, (dict, list, str, int, float))}
+            }
+
+            report_file = Path(__file__).parent / f"debug_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(report_file, 'w') as f:
+                json.dump(report, f, indent=2)
+
+            logger.info(f"\nDetailed report saved to: {report_file}")
+            logger.info(f"Log file: {log_file}")
+
+            # Specific diagnosis for the search issue
+            logger.info("\nSpecific recommendations for the search/filter issue:")
+            logger.info("1. Check the UI's render_main_page method for the search logic")
+            logger.info("2. Verify how the UI calls the service.recommend() method")
+            logger.info("3. Check if filters are properly passed from UI to service")
+            logger.info("4. Look for any try/catch blocks that might be hiding errors")
+            logger.info("5. Add logging to the exact point where search is triggered in the UI")
+
+    def main():
+        """Run the complete debugging process"""
+        print("SponsorMatchAI Search Issue Debugger")
+        print("=" * 40)
+        print(f"Starting debug at: {datetime.now()}")
+        print(f"Log file: {log_file}")
+        print("=" * 40)
+
+        debugger = SearchDebugger()
+
+        # Run all debug steps
+        steps = [
+            ('Configuration and Database', debugger.debug_config_and_connection),
+            ('Entity Loading', debugger.debug_entity_loading),
+            ('Service Layer', debugger.debug_service_layer),
+            ('Search Functionality', debugger.debug_search_functionality),
+            ('UI Search Flow', debugger.debug_ui_search_flow)
+        ]
+
+        for step_name, step_function in steps:
+            print(f"\nRunning: {step_name}...")
+            success = step_function()
+
+            if not success:
+                print(f"Warning: {step_name} had issues")
+                print("Continuing to gather more information...")
+
+        # Generate final report
+        debugger.generate_report()
+
+        print("\n" + "=" * 40)
+        print("Debug session complete!")
+        print(f"Check the log file for details: {log_file}")
+        print("=" * 40)
+
+    if __name__ == "__main__":
+        main()
+
+
+================================================================================
+FIL: data/associations_goteborg.csv
+================================================================================
+
+id,name,member_count,address
+1,IFK Göteborg,6125,"Ullevigatan 5, 411 40 Göteborg"
+2,BK Häcken,4000,"Gustaf Dalénsgatan 2, 417 05 Göteborg"
+3,GAIS,3100,"Ullevigatan 5, 411 40 Göteborg"
+4,Örgryte IS,4000,"Gamla Ullevi, Göteborg"
+5,Västra Frölunda IF,2000,"Ruddalavägen 50, 426 55 Västra Frölunda"
+6,Qviding FIF,1500,"Härlanda Park, 416 78 Göteborg"
+7,Utsiktens BK,1200,"Ruddalens IP, Västra Frölunda"
+8,Lundby IF,1000,"Länsmansgårdens IP, Göteborg"
+9,Gunnilse IS,1200,"Hjällbovallen, Angered"
+10,Göteborgs FF,800,"Majvallen, Kungsladugård"
+
+
+================================================================================
+FIL: data/associations_goteborg_with_coords.csv
+================================================================================
+
+id,name,member_count,address,lat,lon,size_bucket
+1,IFK Göteborg,6125,"Ullevigatan 5, 411 40 Göteborg",57.7071347,11.9783278,large
+2,BK Häcken,4000,"Gustaf Dalénsgatan 2, 417 05 Göteborg",57.721049,11.9447139,large
+3,GAIS,3100,"Ullevigatan 5, 411 40 Göteborg",57.7071347,11.9783278,large
+4,Örgryte IS,4000,"Gamla Ullevi, Göteborg",57.706261,11.9801228,large
+5,Västra Frölunda IF,2000,"Ruddalavägen 50, 426 55 Västra Frölunda",57.6569983,11.911899,large
+6,Qviding FIF,1500,"Härlanda Park, 416 78 Göteborg",57.7173308,12.0171999,large
+7,Utsiktens BK,1200,"Ruddalens IP, Västra Frölunda",57.6643519,11.9093116,large
+8,Lundby IF,1000,"Länsmansgårdens IP, Göteborg",57.7072326,11.9670171,large
+9,Gunnilse IS,1200,"Hjällbovallen, Angered",57.7970147,12.0495271,large
+10,Göteborgs FF,800,"Majvallen, Kungsladugård",57.6818734,11.928201,large
+
+
+================================================================================
+FIL: data/bolag_1_500_sorted_with_year.csv
+================================================================================
+
+Företagsnamn,Postadress,Omsättning (tkr),Anställda,År
+Volvo Personvagnar AB,418 78 Göteborg,300276000,19340,2024
+Volvo Lastvagnar AB,417 15 Göteborg,141881132,4865,2024
+WiLLY:S AB,412 85 Göteborg,41965140,6742,2024
+Volvo Powertrain AB,417 10 Göteborg,30000418,4550,2024
+Polestar Performance AB,418 78 Göteborg,22719783,1156,2024
+Volvo Car Sverige AB,418 78 Göteborg,20871637,115,2024
+Mölnlycke Health Care AB,415 11 Göteborg,18343000,524,2024
+Volvo Parts AB,418 79 Göteborg,17143902,511,2024
+CellMark AB,411 04 Göteborg,16239162,134,2024
+Aktiebolaget Volvo Penta,417 15 Göteborg,14615000,1196,2024
+Stena Recycling AB,414 51 Göteborg,14501326,1726,2024
+Volvo Treasury AB,417 55 Göteborg,14431000,0,2024
+Aurobay Sweden AB,417 55 Göteborg,14340796,1664,2024
+Stena Metal International AB,414 51 Göteborg,12553600,42,2024
+Volvo Information Technology AB,417 15 Göteborg,12500475,1167,2024
+Volvo Logistics AB,418 79 Göteborg,12344863,258,2024
+Schenker AB,412 85 Göteborg,12340894,1832,2024
+Stena Oil AB,414 51 Göteborg,12185926,21,2024
+Volvo Technology AB,417 55 Göteborg,12173306,3206,2024
+SKF International AB,415 05 Göteborg,11223556,16,2024
+Tamro AB,422 46 Hisings Backa,10725125,727,2024
+SKF Sverige AB,415 05 Göteborg,9294929,1476,2024
+Volvo Bussar AB,417 15 Göteborg,8966613,775,2024
+LYNK & CO International AB,417 55 Göteborg,8274634,259,2024
+Serneke Sverige AB,400 10 Göteborg,7873159,910,2024
+Aktiebolaget SKF,415 05 Göteborg,7791000,653,2024
+Akademiska Hus AB,412 58 Göteborg,7719000,559,2024
+IAC Group Sweden AB,418 78 Göteborg,6890577,1411,2024
+Ekman & Co AB,411 11 Göteborg,6135771,58,2024
+Stena Line Scandinavia AB,413 29 Göteborg,6069621,1715,2024
+Elof Hansson Trade AB,413 29 Göteborg,5716837,54,2024
+Adient Sweden AB,418 79 Göteborg,5572554,704,2024
+Bunker One (Sweden) AB,426 71 Västra Frölunda,5467446,13,2024
+Atlantic Container Line AB,418 34 Göteborg,5228546,7,2024
+GEODIS Sweden AB,411 20 Göteborg,4781145,397,2024
+Göteborg Energi AB,416 64 Göteborg,4557000,856,2024
+Chalmers Tekniska Högskola AB,412 58 Göteborg,4234008,3007,2024
+Aktiebolag Lindex,411 03 Göteborg,4142946,548,2024
+Aptiv Contract Services Sweden AB,412 63 Göteborg,3943639,264,2024
+Fortex International AB,411 16 Göteborg,3813121,40,2024
+Solar Sverige AB,411 04 Göteborg,3790922,542,2024
+OneMed Sverige AB,425 37 Hisings Kärra,3757294,365,2024
+Volvo Bil i Göteborg AB,418 78 Göteborg,3687618,223,2024
+Lindex Sverige AB,411 03 Göteborg,3554060,1099,2024
+Exertis CapTech AB,436 33 Askim,3451626,242,2024
+Aktiebolaget Tingstad Papper,415 02 Göteborg,3398240,475,2024
+Zeekr Technology Europe AB,417 55 Göteborg,3272438,932,2024
+Stena Bulk AB,413 03 Göteborg,3202116,31,2024
+ZF CV Distribution Sweden AB,421 30 Västra Frölunda,3140590,47,2024
+Korab International AB,411 04 Göteborg,3115528,14,2024
+Implenia Sverige AB,411 18 Göteborg,2851880,423,2024
+Hultafors Group AB,421 30 Västra Frölunda,2798820,137,2024
+SKF Eurotrade AB,415 50 Göteborg,2715228,24,2024
+Bostadsaktiebolaget Poseidon,415 05 Göteborg,2621293,364,2024
+Göteborg Energi Din El AB,Göteborg,2562974,0,2024
+Hornbach Byggmarknad AB,417 05 Göteborg,2502960,798,2024
+Volvo Car Real Estate and Assets 1 AB,Göteborg,2457398,0,2024
+BASF AB,412 58 Göteborg,2336000,39,2024
+ESAB AB,417 55 Göteborg,2230542,431,2024
+NTEX AB,418 79 Göteborg,2181480,209,2024
+St1 Refinery AB,418 34 Göteborg,2171506,264,2024
+Nakdcom One World AB,415 11 Göteborg,2162844,257,2024
+Vy Buss AB,411 11 Göteborg,2158407,1483,2024
+Thomas Betong AB,412 54 Göteborg,2156351,495,2024
+Göteborgs Stads Bostadsaktiebolag,412 52 Göteborg,2092861,409,2024
+Stena Stål AB,414 51 Göteborg,2070385,234,2024
+Arthur J Gallagher Nordic AB,412 63 Göteborg,2026691,34,2024
+Estrella AB,424 69 Angered,1950564,267,2024
+DFDS AB,418 34 Göteborg,1926515,245,2024
+Polestar Automotive Sweden AB,418 78 Göteborg,1912737,46,2024
+Volvo Group Purchasing AB,417 15 Göteborg,1895174,422,2024
+Plasman Sverige AB,418 79 Göteborg,1837365,669,2024
+Capio Närsjukvård AB,411 04 Göteborg,1824904,1136,2024
+Svenska Neoplan AB,417 05 Göteborg,1780875,0,2024
+Sportlife M W AB,417 05 Göteborg,1753750,965,2024
+REMONDIS Sweden AB,422 46 Hisings Backa,1746215,479,2024
+Volvo Lastvagnar Sverige AB,418 79 Göteborg,1745922,84,2024
+Skrotfrag AB,424 38 Agnesberg,1745847,137,2024
+Familjebostäder i Göteborg AB,412 54 Göteborg,1725826,271,2024
+Alumeco Sverige AB,411 04 Göteborg,1708982,40,2024
+Ridestore AB,417 70 Göteborg,1691751,46,2024
+Wästbygg Entreprenad AB,416 64 Göteborg,1687109,194,2024
+Nexer AB,417 56 Göteborg,1686451,962,2024
+Jollyroom AB,418 78 Göteborg,1627641,328,2024
+Connect Bus Sverige AB,415 02 Göteborg,1608963,2381,2024
+Volvo Group Connected Solutions AB,405 08 Göteborg,1597302,352,2024
+Jernbro Industrial Services AB,412 63 Göteborg,1590471,886,2024
+Buss i Väst AB,412 50 Göteborg,1589696,17,2024
+Göteborg Energi Nät AB,415 02 Göteborg,1549563,153,2024
+Logistic Contractor Entreprenad AB,416 64 Göteborg,1540173,52,2024
+Vitrolife Sweden AB,421 32 Västra Frölunda,1503575,168,2024
+Ascom (Sweden) AB,417 05 Göteborg,1500129,245,2024
+Norconsult Sverige AB,417 55 Göteborg,1490472,1227,2024
+Liseberg AB,412 51 Göteborg,1467976,1264,2024
+Swegon Sverige AB,421 30 Västra Frölunda,1456440,145,2024
+Inet AB,436 33 Askim,1451501,114,2024
+Jeppesen Systems AB,411 03 Göteborg,1412263,318,2024
+Alten Sverige AB,411 04 Göteborg,1404815,1415,2024
+MQ Retail AB,404 39 Göteborg,1380236,551,2024
+Bulten Sweden AB,421 32 Västra Frölunda,1368000,28,2024
+Göteborgs Spårvägar AB,416 64 Göteborg,1355418,1312,2024
+JOAB Försäljnings AB,417 29 Göteborg,1348740,282,2024
+APM Terminals Gothenburg AB,418 34 Göteborg,1347693,333,2024
+Sector Alarm AB,412 50 Göteborg,1346922,106,2024
+Aktiebolaget Volvo,418 78 Göteborg,1334000,321,2024
+MacGregor Sweden AB,421 30 Västra Frölunda,1333686,198,2024
+WirelessCar Sweden AB,412 50 Göteborg,1332996,376,2024
+Skogssällskapets Förvaltning AB,411 04 Göteborg,1315720,103,2024
+International Färg AB,424 57 Gunnilse,1311622,139,2024
+Picadeli AB,415 11 Göteborg,1308094,78,2024
+Momentum Industrial AB,415 05 Göteborg,1291430,276,2024
+Ocean Infinity AB,426 71 Västra Frölunda,1272993,87,2024
+FlexLink AB,415 05 Göteborg,1269395,117,2024
+Renova Miljö AB,411 04 Göteborg,1261231,506,2024
+A.J. Dahlberg Slakteri AB,Göteborg,1260021,155,2024
+Svenska Mässan Gothia Towers AB,412 51 Göteborg,1255027,775,2024
+Wallenstam Stacken AB,Göteborg,1239719,0,2024
+Scan Global Logistics AB,412 63 Göteborg,1208320,123,2024
+AGN Haga AB,411 05 Göteborg,1194085,74,2024
+Capio Primärvård AB,405 22 Göteborg,1187826,730,2024
+Rasta Sverige AB,436 32 Askim,1177645,554,2024
+MQ MarQet AB,412 63 Göteborg,1174701,374,2024
+Schenker Åkeri AB,422 46 Hisings Backa,1160618,1028,2024
+Brose Sweden AB,423 37 Torslanda,1160343,150,2024
+Stampen Lokala Medier AB,411 11 Göteborg,1143791,560,2024
+Karlastaden Utveckling AB,Göteborg,1142739,0,2024
+Victor Hasselblad AB,401 23 Göteborg,1124715,53,2024
+Beyond Gravity Sweden AB,412 76 Göteborg,1119688,349,2024
+Consilium Marine & Safety AB,422 46 Hisings Backa,1088276,127,2024
+Car-O-Liner Group AB,421 32 Västra Frölunda,1085230,203,2024
+Specsavers Sweden AB,411 04 Göteborg,1068375,106,2024
+Continental Däck Sverige AB,414 51 Göteborg,1065310,69,2024
+Global Forest Products Sweden AB,411 21 Göteborg,1039852,5,2024
+COWI AB,411 04 Göteborg,1038289,679,2024
+Zinzino Operations AB,411 06 Göteborg,1037926,133,2024
+Beiersdorf AB,417 55 Göteborg,1036801,104,2024
+Sortera Materials AB,412 63 Göteborg,1018595,87,2024
+Furetank Rederi AB,430 82 Donsö,1012766,184,2024
+ASSA ABLOY Industrial Sverige AB,426 77 Västra Frölunda,997114,312,2024
+Amring AB,418 78 Göteborg,995166,83,2024
+Göteborgs Hamn AB,414 51 Göteborg,995068,163,2024
+Shiloh Industries AB,421 32 Västra Frölunda,983166,313,2024
+Dachser Sweden AB,418 79 Göteborg,982615,202,2024
+MVB Väst AB,415 02 Göteborg,971997,117,2024
+Byggnads AB Tornstaden,416 60 Göteborg,942525,65,2024
+Swisslog AB,415 12 Göteborg,939475,157,2024
+Wallennius SOL AB,414 51 Göteborg,939221,29,2024
+Emil Lundgren AB,417 05 Göteborg,935071,499,2024
+SKG Sverige AB,415 02 Göteborg,934739,4,2024
+Rolfs Flyg- & Bussresor AB,417 06 Göteborg,932847,98,2024
+Semcon Sweden AB,417 55 Göteborg,915316,658,2024
+Albireo AB,413 46 Göteborg,913136,36,2024
+VFS Nordic AB,418 79 Göteborg,906487,38,2024
+Esswell International AB,411 14 Göteborg,906314,23,2024
+Arriver Software AB,417 56 Göteborg,902924,422,2024
+Higab AB,412 51 Göteborg,902587,103,2024
+Göteborgs Stads Leasing AB,417 07 Göteborg,901907,125,2024
+Ford Sweden Parts Operations AB,400 60 Göteborg,897663,1,2024
+DEKRA Industrial AB,415 11 Göteborg,895157,597,2024
+Högsbo Stormarknad AB,421 32 Västra Frölunda,891311,114,2024
+Central National Sweden AB,411 16 Göteborg,889527,0,2024
+Axel Arigato AB,411 21 Göteborg,886299,78,2024
+Kvdbil AB,411 04 Göteborg,885833,178,2024
+Th. Brunius & Co AB,411 21 Göteborg,853511,14,2024
+Kosan Gas Sverige AB,422 46 Hisings Backa,841943,12,2024
+Medartuum AB,411 09 Göteborg,841079,19,2024
+Stena Metall AB,414 51 Göteborg,839000,7,2024
+Aros Kapital AB,416 64 Göteborg,828962,90,2024
+Bagaren & Kocken AB,418 78 Göteborg,822146,96,2024
+Jotun Sverige AB,426 52 Västra Frölunda,820514,79,2024
+PTC Sweden AB,412 50 Göteborg,819026,24,2024
+Swecem AB,412 63 Göteborg,816297,27,2024
+Capgemini Engineering Sverige AB,411 06 Göteborg,813816,516,2024
+Fractal Gaming AB,421 31 Västra Frölunda,810702,64,2024
+AF Bygg Väst AB,412 50 Göteborg,807039,44,2024
+Scanlube AB,418 34 Göteborg,798925,45,2024
+Kålltorps Byggnads AB,415 02 Göteborg,784179,85,2024
+Nordic Bulkers AB,411 04 Göteborg,782187,80,2024
+Bilia AB,421 32 Västra Frölunda,781000,253,2024
+Grafiska Vägen Livs AB,412 83 Göteborg,767021,108,2024
+NTEX Inrikes AB,418 79 Göteborg,758471,171,2024
+Hans Andersson Paper Nya AB,411 16 Göteborg,751885,12,2024
+Input Interiör AB,421 30 Västra Frölunda,740197,54,2024
+Wärtsilä Sweden AB,418 78 Göteborg,739584,137,2024
+BESAB AB,422 59 Hisings Backa,736412,191,2024
+NetGroup Engineering i Göteborg AB,417 55 Göteborg,732725,4,2024
+Sirius Chartering AB,426 58 Västra Frölunda,730144,7,2024
+Flodén Byggnads AB,412 50 Göteborg,728006,66,2024
+White Arkitekter AB,411 18 Göteborg,727147,520,2024
+Almondy AB,423 37 Torslanda,721987,105,2024
+Devoco Building AB,436 32 Askim,706770,55,2024
+Tenneco Sverige AB,418 79 Göteborg,704651,61,2024
+Greencarrier Liner Agency Sweden AB,426 77 Västra Frölunda,698986,14,2024
+Svenska Orient Linien AB,414 51 Göteborg,697669,13,2024
+Evercare Medical AB,425 37 Hisings Kärra,689295,20,2024
+Balder Bronsyxan 19 AB,411 38 Göteborg,687000,143,2024
+Renova AB,411 04 Göteborg,685748,334,2024
+ColliCare Logistics AB,422 46 Hisings Backa,684687,70,2024
+ARA Timber AB,411 16 Göteborg,676382,6,2024
+Chalmersfastigheter AB,411 32 Göteborg,671656,36,2024
+Alektum Group AB,411 03 Göteborg,669375,252,2024
+Donsö Shipping AB,430 82 Donsö,668392,0,2024
+Gundlach Automotive Solutions Sweden AB,418 78 Göteborg,667484,21,2024
+Mono Trading Sweden AB,436 32 Askim,666445,3,2024
+ANSYS Sweden AB,416 64 Göteborg,660922,47,2024
+CooperVision Nordic AB,416 64 Göteborg,660237,53,2024
+Prevex AB,422 46 Hisings Backa,657098,136,2024
+Volvo Business Services International AB,418 79 Göteborg,654619,110,2024
+JAS Worldwide Sweden AB,426 77 V Frölunda,652551,100,2024
+Stena Rederi AB,413 03 Göteborg,649000,186,2024
+Foundever Sweden AB,417 55 Göteborg,648777,1060,2024
+Focus Nordic AB,415 68 Göteborg,645889,70,2024
+Fisher Scientific GTF AB,418 78 Göteborg,645215,65,2024
+DMG MORI Sweden AB,421 31 V Frölunda,644038,50,2024
+Nobel Biocare AB,411 17 Göteborg,635184,345,2024
+Bröderna Hanssons i Gbg Export AB,414 51 Göteborg,632761,115,2024
+Göteborgs Stads Parkerings AB,412 51 Göteborg,632051,84,2024
+Manta Marine Technologies AB,412 83 Göteborg,620742,103,2024
+Träfraktkontoret i Göteborg AB,414 51 Göteborg,617845,22,2024
+Input Interiör Göteborg AB,421 30 V Frölunda,616090,110,2024
+Stena Bygg AB,412 50 Göteborg,615253,18,2024
+V-TAB AB,412 50 Göteborg,614736,146,2024
+Danish Crown Sweden AB,422 53 Hisings Backa,612117,40,2024
+DAB Group AB,417 07 Göteborg,600264,191,2024
+Avarn Security Systems AB,421 32 V Frölunda,591882,366,2024
+Mileway Sunbeam Bidco AB,Göteborg,587907,0,2024
+Örneborgs Delikatesser AB,436 32 Askim,587712,67,2024
+Skeppsviken Bygg i Göteborg AB,414 51 Göteborg,583179,55,2024
+Oljefirma J. Christensson AB,430 84 Styrsö,577751,3,2024
+Garmin Nordic Sweden AB,427 40 Billdal,566550,73,2024
+Gothenburg Ro/Ro Terminal AB,418 34 Göteborg,565945,284,2024
+Swemaint AB,415 72 Göteborg,563285,266,2024
+Ewellix AB,415 02 Göteborg,563046,59,2024
+Oticon Medical AB,436 32 Askim,562334,49,2024
+STS Alpresor AB,411 34 Göteborg,559176,45,2024
+GöteborgsOperan AB,411 04 Göteborg,553938,480,2024
+Bakels Sweden AB,415 05 Göteborg,549011,116,2024
+DevPort AB,417 55 Göteborg,543362,14,2024
+Lagerhaus AB,412 63 Göteborg,542905,159,2024
+Castra Group AB,412 50 Göteborg,536026,16,2024
+Anläggningsbolaget Väst AB,417 49 Göteborg,531257,76,2024
+Fastighets AB Balder,411 38 Göteborg,529000,474,2024
+Volvo Business Services AB,418 79 Göteborg,522308,122,2024
+Forest Papper AB,414 63 Göteborg,517700,2,2024
+Epical Sweden AB,411 04 Göteborg,513088,323,2024
+Veteranpoolen AB,411 14 Göteborg,512641,775,2024
+Munkebäcks Livs AB,416 72 Göteborg,511588,98,2024
+Elektroautomatik i Sverige AB,418 78 Göteborg,508360,193,2024
+KUKA Nordic AB,421 30 V Frölunda,507569,40,2024
+Framtiden Byggutv. AB,412 58 Göteborg,506255,45,2024
+Recorded Future AB,411 20 Göteborg,506036,136,2024
+Volvo Financial Services AB,411 04 Göteborg,496517,38,2024
+Forbo Flooring AB,421 32 V Frölunda,496172,78,2024
+GPBM Nordic AB,418 78 Göteborg,494349,74,2024
+Pmflex Group Northern Europe AB,422 46 Hisings Backa,493895,18,2024
+LPE Sverige AB,424 57 Gunnilse,493095,106,2024
+VecScan AB,417 55 Göteborg,490715,101,2024
+Kärcher AB,425 37 Hisings Kärra,490462,95,2024
+Stena Recycling International AB,414 51 Göteborg,488961,118,2024
+AB Svenskt Konstsilke,421 67 V Frölunda,488291,8,2024
+DROPS Design AB,436 32 Askim,483947,2,2024
+Wallenstam AB,411 36 Göteborg,481000,261,2024
+Foxway Education AB,417 55 Göteborg,473299,71,2024
+Trident BMC AB,417 55 Göteborg,471583,52,2024
+Moberg Bil AB,417 05 Göteborg,469117,33,2024
+Torslanda Stormarknad AB,423 37 Torslanda,466882,77,2024
+Sveafjord AB,418 79 Göteborg,466451,3,2024
+Lynk & Co Sales Sweden AB,417 55 Göteborg,463188,32,2024
+F.O. Peterson & Söner Bygg AB,411 05 Göteborg,462502,79,2024
+KSB Sverige AB,436 32 Askim,461770,68,2024
+Erik Tiberg Möbler AB,421 48 V Frölunda,461713,132,2024
+Rederi AB Älvtank,430 82 Donsö,460789,61,2024
+Aarsleff Ground Engineering AB,424 57 Gunnilse,454073,85,2024
+icomera AB,411 03 Göteborg,450512,112,2024
+Aktiebolaget Sappa,412 85 Göteborg,450264,65,2024
+Trek Sweden AB,436 33 Askim,449002,19,2024
+Kewab Syd-Väst AB,422 46 Hisings Backa,447713,62,2024
+Enter Ställningar AB,417 46 Göteborg,444341,121,2024
+Signal & Andersson Chark. AB,421 32 V Frölunda,443221,118,2024
+DAW Nordic AB,415 02 Göteborg,441031,159,2024
+Glamox AB,412 51 Göteborg,436814,60,2024
+dormakaba Sverige AB,436 34 Askim,435756,102,2024
+RO-Gruppen Göteborg AB,412 63 Göteborg,435667,68,2024
+Saigon Food AB,424 69 Angered,435231,38,2024
+Hebe Frukt & Grönsaker AB,422 46 Hisings Backa,431717,56,2024
+MAN Energy Solutions Sverige AB,418 78 Göteborg,428346,61,2024
+Dräger Sverige AB,415 05 Göteborg,423342,78,2024
+Constructor Sverige AB,415 68 Göteborg,422919,51,2024
+Synthomer Speciality Additives AB,Göteborg,422325,52,2024
+Norex International AB,411 10 Göteborg,419623,35,2024
+Smart Retur Sverige AB,422 46 Hisings Backa,418897,27,2024
+Protective System Svenska Prod. AB,421 31 V Frölunda,416799,62,2024
+HiQ Göteborg AB,411 09 Göteborg,416357,295,2024
+Pagero AB,411 17 Göteborg,414923,319,2024
+Aleido Sweden AB,417 55 Göteborg,414611,289,2024
+Forsman & Bodenfors AB,411 21 Göteborg,414123,143,2024
+Awardit CLS AB,415 11 Göteborg,413129,73,2024
+ALBIS Nordics & Baltics AB,411 06 Göteborg,410328,17,2024
+Nordic Crane AB,417 30 Göteborg,408013,0,2024
+DFDS Logistics Services AB,418 79 Göteborg,407281,253,2024
+DEWESOFT AB,422 46 Hisings Backa,49894,6,2023
+Hissteknik i Göteborg AB,415 02 Göteborg,49881,19,2024
+MULBERRY SWEDEN AB,411 09 Göteborg,49833,14,2024
+JICE Svenska AB,413 29 Göteborg,49805,3,2023
+Goovinn AB,411 05 Göteborg,49786,25,2023
+Software by QUOKKA AB,411 05 Göteborg,49747,40,2023
+"Cykelhuset, Högsbo Elektrosport Aktiebolag",414 80 Göteborg,49649,21,2023
+Krook & Tjäder Solutions AB,413 05 Göteborg,49622,4,2023
+MOVIA AB,418 34 Göteborg,49602,18,2024
+Frigus Aktiebolag,421 31 Västra Frölunda,49575,15,2024
+Nordiqus Åkroken 1 AB,Göteborg,49521,0,2023
+Vätterleden Aktiebolag,400 16 Göteborg,49448,0,2024
+Our Studio void AB,411 15 Göteborg,49435,27,2023
+Fredag Handel AB,421 32 Västra Frölunda,49425,16,2024
+Delcore Järfälla AB,Göteborg,49420,0,2023
+Autoshop Göteborg AB,422 46 Hisings Backa,49404,2,2022
+Wikström Installationskonsult AB,412 50 Göteborg,49375,36,2024
+Vägservice centralen i Norden AB,424 57 Gunnilse,49216,16,2023
+Aspelin-Ramm Fastigheter AB,421 32 Västra Frölunda,49199,21,2023
+Infotiv AB,411 17 Göteborg,49193,30,2023
+IPL Independent Project & Logistics AB,411 18 Göteborg,49158,2,2024
+Bergendahls El Teknik AB,412 75 Göteborg,49116,23,2023
+Conciliance AB,411 03 Göteborg,49110,38,2023
+Gung AB,412 81 Göteborg,49051,30,2024
+Restaurang Valand AB,411 37 Göteborg,49043,27,2023
+Forest X AB,412 50 Göteborg,48944,20,2023
+Anphi AB,411 36 Göteborg,48914,36,2023
+Rancold AB,417 07 Göteborg,48889,12,2024
+Axel Arigato Sverige AB,411 21 Göteborg,48846,15,2023
+Gillis Edman Begravning och Familjejuridik AB,411 40 Göteborg,48814,28,2023
+Aktiebolaget C.I. Pihl,416 55 Göteborg,48811,11,2023
+Fredsfisken Aktiebolag,422 46 Hisings Backa,48691,41,2023
+Geogruppen i Göteborg AB,415 02 Göteborg,48683,27,2023
+Balder Snöflingan 3 AB,Göteborg,48675,0,2023
+Ahlqvist Motorcyklar AB,421 32 Västra Frölunda,48663,6,2023
+Serneke Arenahotell AB,Göteborg,48659,0,2023
+Göteborgs Mark o Trädgård AB,422 46 Hisings Backa,48649,7,2024
+rt-labs Aktiebolag,413 27 Göteborg,48649,27,2023
+Devies Development AB,411 16 Göteborg,48582,41,2023
+Kinells Måleri Aktiebolag,426 77 Västra Frölunda,48582,51,2024
+Yaki-Da AB,411 38 Göteborg,48552,23,2024
+Prime Grill Göteborg AB,411 36 Göteborg,48429,20,2024
+PcP. Sverige AB,421 31 Västra Frölunda,48391,5,2025
+Flatås Byggnads Aktiebolag,Göteborg,48318,0,2023
+AB Platzer Änggården 718:1,411 04 Göteborg,48309,0,2023
+Ex-Te el Aktiebolag,415 05 Göteborg,48236,25,2024
+Prokab Ekonomikonsulter AB,421 30 Västra Frölunda,48196,46,2023
+Tata Steel International (Sweden) AB,411 05 Göteborg,48195,6,2024
+Betonghåltagning i Göteborg Aktiebolag,422 46 Hisings Backa,48183,19,2024
+Integro Consulting AB,417 03 Göteborg,48182,42,2023
+Aktiebolaget Lindec,421 50 Västra Frölunda,48163,12,2024
+ACL Invest 2003 AB,411 13 Göteborg,48146,0,2023
+Fagerströms Livs AB,416 60 Göteborg,48144,11,2024
+Ackordscentralen Väst Aktiebolag,411 17 Göteborg,48090,16,2024
+Scandinavia Project Transport AB,418 34 Göteborg,48028,3,2023
+Logent Customs AB,411 21 Göteborg,47986,33,2023
+GBG Target 1 AB,Göteborg,47968,0,2023
+JULVI HUS i Göteborg Aktiebolag,421 30 Västra Frölunda,47961,7,2023
+Excellent El Installation i Göteborg Aktiebolag,421 32 Västra Frölunda,47952,28,2023
+Guldhedens Flyttexpress AB,436 32 Askim,47901,16,2023
+TechSeed AB,417 56 Göteborg,47887,3,2023
+GE-bäst Services AB,421 31 Västra Frölunda,47859,69,2024
+Meridion AB,414 63 Göteborg,47848,29,2024
+Meat The World AB,417 29 Göteborg,47840,6,2023
+Salming Sports AB,436 33 Askim,47811,8,2024
+Steelbit Trading Gothenburg AB,417 13 Göteborg,47749,1,2023
+Göteborgs Skog & Trädgård Aktiebolag,436 32 Askim,47740,7,2023
+AmSpec (Sweden) AB,418 34 Göteborg,47735,27,2023
+Tribuit Systems AB,417 63 Göteborg,47704,9,2024
+Strait Air Transport Aktiebolag,411 27 Göteborg,47695,6,2023
+Wardt Communication AB,411 14 Göteborg,47665,23,2023
+QESTIT Göteborg AB,411 03 Göteborg,47655,42,2023
+Front Advokater AB,412 50 Göteborg,47638,30,2022
+Market Solutions Sverige AB,416 55 Göteborg,47632,9,2024
+Iron Wheels AB,417 46 Göteborg,47583,23,2023
+Swedish Academy for Advanced Clinical Dentistry AB,421 30 Västra Frölunda,47550,25,2023
+Draganovic Matmarknad AB,424 32 Angered,47512,12,2023
+Sardonyx 12 AB,Göteborg,47498,0,2023
+Tro och tvivel AB,426 68 Västra Frölunda,47497,2,2023
+Lejonet & Björnen Sverige AB,421 32 Västra Frölunda,47452,25,2023
+Vidal Nordic AB,413 06 Göteborg,47433,1,2023
+Logivity AB,418 73 Göteborg,47402,4,2023
+Simonsen Bil Försäljning AB,425 37 Hisings Kärra,47397,1,2023
+Mindcamp AB,413 28 Göteborg,47351,26,2024
+Go North Rocket 26 AB,413 30 Göteborg,47305,0,2023
+Bevion Group AB,413 27 Göteborg,47298,0,2023
+Roima Sweden AB,412 50 Göteborg,47284,20,2023
+Rösbo Åkeri Aktiebolag,442 90 Kungälv,47221,26,2024
+Högsbohöjd Livs AB,414 83 Göteborg,47167,9,2024
+Climacare Rörteknik AB,421 31 Västra Frölunda,47152,23,2023
+Murbiten Tegel & Puts AB,422 46 Hisings Backa,47143,24,2023
+A-P Ställningsprodukter AB,415 02 Göteborg,47143,6,2023
+Allt i Mark Göteborg AB,422 59 Hisings Backa,47091,6,2023
+Alhebi Gross AB,424 57 Gunnilse,47022,2,2023
+Vitrolife AB,421 32 Västra Frölunda,47000,1,2023
+Soal Marine AB,426 71 Västra Frölunda,46791,0,2023
+FISKHUSET HILLBERG Aktiebolag,414 51 Göteborg,46740,32,2023
+AlltiBil Västra Sverige AB,417 05 Göteborg,46717,23,2023
+Edithouse Film Works AB,411 04 Göteborg,46717,14,2024
+Clean Burn Trading AB,418 78 Göteborg,46705,10,2024
+Stålgrossisten i Göteborg AB,412 65 Göteborg,46692,7,2023
+Key Relocation Sweden AB,411 33 Göteborg,46586,29,2023
+Din Klinik Väst Holding AB,413 30 Göteborg,46567,32,2022
+Daydream Sweden AB,417 05 Göteborg,46562,17,2023
+Oddbird International AB,411 24 Göteborg,46544,6,2023
+BRP Shipping AB,421 57 Västra Frölunda,46504,29,2023
+Okidoki AB,411 22 Göteborg,46487,43,2023
+Jobtip AB,411 18 Göteborg,46473,34,2023
+Edvardssons Måleri i Västra Frölunda AB,426 52 Västra Frölunda,46426,30,2023
+Ballograf AB,426 52 Västra Frölunda,46364,23,2024
+Montell & Partners Nordic AB,411 25 Göteborg,46308,0,2024
+Twentyfoursevenlogistics AB,411 04 Göteborg,46300,18,2023
+KOSTAL Sweden AB,417 56 Göteborg,46299,10,2023
+Swedron Sverige AB,421 47 Västra Frölunda,46295,6,2023
+ViAQ Projektledning AB,411 21 Göteborg,46203,19,2023
+Prefinance Sweden AB,412 50 Göteborg,46162,3,2022
+Bärgningstjänsten Sverige AB,425 36 Hisings Kärra,46137,29,2023
+AJR Car Recond Sverige AB,421 31 Västra Frölunda,46123,25,2024
+Velco West AB,415 02 Göteborg,46093,14,2024
+Wästmur & Construction AB,422 46 Hisings Backa,46045,9,2023
+KFR Mat AB,424 91 Olofstorp,46034,13,2023
+Hemnovia AB,415 05 Göteborg,45908,57,2023
+COBS AB,421 32 Västra Frölunda,45866,10,2024
+Norse Nordics AB,411 17 Göteborg,45854,13,2023
+Software Skills International AB,411 07 Göteborg,45832,9,2023
+Greenbow AB,417 24 Göteborg,45831,5,2023
+Västkustens Mur & Kakel AB,421 31 Västra Frölunda,45784,28,2023
+Ocean Infinity (Offshore) AB,426 71 Västra Frölunda,45783,49,2023
+K & K Väst El AB,417 07 Göteborg,45755,21,2024
+Hi-Lo Electronics AB,Göteborg,45737,6,2022
+Realise Communication Sweden AB,411 36 Göteborg,45703,13,2024
+Scanlink Transport & Logistics AB,412 66 Göteborg,45666,6,2023
+Berndt Mattssons Åkeri AB,418 78 Göteborg,45665,32,2024
+Capio Gastro Center Göteborg AB,421 30 Västra Frölunda,45644,20,2024
+Tripnet AB,412 51 Göteborg,45644,21,2024
+Stylt-Trampoli AB,413 29 Göteborg,45606,21,2023
+Arkipelagen Företagscenter AB,436 34 Askim,45564,13,2023
+90 110 Sverige AB,418 34 Göteborg,45528,7,2024
+Balder Borgwihl AB,Göteborg,45497,0,2023
+Fysiken Friskvård i Göteborg AB,412 79 Göteborg,45473,23,2024
+Hälsoresurs i Sverige AB,411 19 Göteborg,45465,7,2024
+Solberg Kommunikation AB,411 16 Göteborg,45461,29,2024
+Viapm AB,Göteborg,45427,22,2024
+Järnporten Projektutveckling AB,411 10 Göteborg,45385,0,2023
+Lerums Tekniska Isolering LTI AB,424 57 Gunnilse,45328,22,2023
+AB Platzer Änggården 36:2,411 04 Göteborg,45302,0,2023
+Ölstugan Avenyn AB,411 36 Göteborg,45233,26,2024
+LSS-Partner AB,421 47 Västra Frölunda,45198,88,2023
+Fria Valet Vård och Omsorg AB,424 36 Angered,45187,98,2023
+Vrångö Transport AB,430 83 Vrångö,45149,15,2024
+On-Site Exhibitions AB,416 63 Göteborg,45117,5,2024
+Monitor Larm & Bevakning i Göteborg AB,411 05 Göteborg,45093,21,2024
+Foodmarket i Torslanda AB,417 55 Göteborg,45046,23,2024
+KRAHN Specialty Fluids AB,422 46 Hisings Backa,45043,5,2023
+Hotel Flora AB,411 17 Göteborg,45012,20,2023
+Hantverkarhuset Göteborg AB,421 32 Västra Frölunda,44980,11,2024
+Zooma Agency AB,411 26 Göteborg,44976,24,2024
+Castra Väst Systemutveckling AB,412 50 Göteborg,44947,25,2024
+Danneviks Handel AB,411 03 Göteborg,44942,16,2023
+Wasa Bygg AB,415 02 Göteborg,44924,14,2023
+Effkå Livsmedel AB,414 69 Göteborg,44913,13,2024
+Industrial Engineering West Group AB,414 51 Göteborg,44883,0,2024
+Allround Lack Göteborg AB,417 29 Göteborg,44874,19,2024
+Knowit Insight Väst AB,411 04 Göteborg,44844,27,2023
+Bozzini i Göteborg AB,421 30 Västra Frölunda,44834,5,2023
+Hedin Sport Car AB,417 05 Göteborg,44820,5,2023
+Eriksson Bilcenter AB,418 36 Göteborg,44810,1,2023
+Villa Belparc AB,413 11 Göteborg,44746,38,2023
+Sebratec AB,411 26 Göteborg,44675,48,2023
+Brekke & Strand Akustik AB,416 63 Göteborg,44671,31,2023
+Nötkärnan Kortedala Vårdcentral och BVC AB,415 13 Göteborg,44648,22,2023
+Boomr Group AB,412 52 Göteborg,44628,26,2023
+UNDEKO AB,422 44 Hisings Backa,44624,8,2024
+QSR Sales AB,421 31 Västra Frölunda,44598,5,2023
+Adact Revisorer & Konsulter AB,411 03 Göteborg,44567,28,2023
+Hawk PropCo (Sweden) AB,Göteborg,44484,0,2023
+G.M.H. Pizzeria AB,Göteborg,44453,37,2023
+Omnia Digital Workplace AB,411 20 Göteborg,44431,25,2023
+Aktiebolaget Sigrid Rudebecks Skola,411 28 Göteborg,44430,38,2024
+PharmaLex Sweden AB,412 63 Göteborg,44356,15,2024
+kok i tot sos AB,411 36 Göteborg,44354,38,2024
+Aktiebolaget Robert Lidbeck & Co,422 46 Hisings Backa,44299,9,2023
+Gomero Nordic AB,411 04 Göteborg,44264,15,2023
+Actemium Engineering AB,417 05 Göteborg,44238,26,2023
+VFS International AB,418 79 Göteborg,44211,6,2023
+Wallenstam Lägenheter AB,Göteborg,44179,0,2023
+Lind Edlund Kenamets Intellectual Property AB,411 36 Göteborg,44153,11,2023
+Jodgo AB,413 27 Göteborg,44150,0,2023
+Freemelt AB,414 51 Göteborg,44148,32,2023
+AB Tingstad Rörinstallation,422 46 Hisings Backa,44134,23,2024
+AB Svetsteknik,436 32 Askim,44106,12,2023
+QSEC Sverige AB,436 32 Askim,44073,38,2023
+Sector Alarm Försäljnings AB,412 50 Göteborg,43977,82,2023
+Doorly AB,411 36 Göteborg,43974,2,2024
+Creativ Company Sverige AB,423 37 Torslanda,43960,7,2024
+deugro (Sweden) AB,412 63 Göteborg,43946,5,2023
+Bilpartners i väst AB,416 74 Göteborg,43912,3,2024
+Åkes Äkta Hönökakor AB,423 34 Torslanda,43906,23,2024
+Adonia Omsorg AB,417 07 Göteborg,43877,34,2023
+MOORE KLN AB,411 04 Göteborg,43870,25,2023
+
+

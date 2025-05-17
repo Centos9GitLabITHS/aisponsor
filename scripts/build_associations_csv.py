@@ -2,22 +2,16 @@
 """
 scripts/build_associations_csv.py
 ---------------------------------
-Read a CSV of club associations, geocode addresses to lat/lon, and write out a new CSV.
-
-Retry logic:
-    1. original address
-    2. address + ", Sweden"
-    3. replace suburb "Västra Frölunda" → "Göteborg"
-    4. postal-code only (if comma present)
-If all attempts fail, lat/lon remain NaN so you can inspect later.
+Read a CSV of club associations (with no lat/lon), geocode addresses to lat/lon,
+and write out a new CSV with columns ['id','name','member_count','address','lat','lon','size_bucket'].
 """
 import logging
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Tuple, Optional
 
-import numpy as np
 import pandas as pd
+from geopy.exc import GeocoderServiceError, GeopyError
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
 
@@ -28,10 +22,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 def try_geocode(address: str, geocode: RateLimiter) -> Tuple[Optional[float], Optional[float]]:
     """
-    Attempt to geocode `address` using successive fallback strategies.
+    Attempt to geocode `address` (Göteborg, Sweden) with fallbacks.
     Returns (lat, lon) or (None, None).
     """
     variants = [
@@ -45,47 +38,41 @@ def try_geocode(address: str, geocode: RateLimiter) -> Tuple[Optional[float], Op
             continue
         try:
             loc = geocode(query, country_codes="se", exactly_one=True)
-        except Exception as e:
-            logger.debug("Geocoding error for '%s': %s", query, e)
+        except (GeocoderServiceError, GeopyError) as e:
+            logger.debug("Geocoding failed for %r: %s", query, e)
             continue
         if loc:
             return loc.latitude, loc.longitude
     return None, None
 
-
 def main(input_csv: Path, output_csv: Path) -> None:
-    """
-    Read associations from `input_csv`, geocode all rows,
-    recompute size_bucket, and write to `output_csv`.
-    """
     if not input_csv.exists():
         logger.error("Input CSV not found: %s", input_csv)
         raise SystemExit(1)
 
+    # If we've already built it, skip
+    if output_csv.exists():
+        logger.info("Found existing %s – skipping geocoding", output_csv)
+        return
+
     logger.info("Loading %s", input_csv)
     df = pd.read_csv(input_csv)
 
-    # ————— Column-normalization shim —————
-    # If there is no lat/lon, inject them as NaN; otherwise rename common alternates
-    if "lat" not in df.columns or "lon" not in df.columns:
-        # rename if alternate names present
-        for (alt_lat, alt_lon) in [("latitude", "longitude"), ("Latitude", "Longitude")]:
-            if alt_lat in df.columns and alt_lon in df.columns:
-                df = df.rename(columns={alt_lat: "lat", alt_lon: "lon"})
-                break
-        else:
-            # no lat/lon nor alternates → create empty columns
-            df["lat"] = np.nan
-            df["lon"] = np.nan
-    # ————————————————————————————————
+    # Inject lat/lon columns if missing
+    if "lat" not in df.columns:
+        df["lat"] = pd.NA
+    if "lon" not in df.columns:
+        df["lon"] = pd.NA
 
-    # Prepare geocoder (1 req/sec, 10s timeout)
+    # Prepare geocoder
     geo = Nominatim(user_agent="sponsor_match_geo", timeout=10, scheme="https")
     geocode = RateLimiter(geo.geocode, min_delay_seconds=1.1)
 
-    # Geocode every row (overwrites any existing coords)
+    # Geocode every row that has missing lat or lon
+    missing = df["lat"].isna() | df["lon"].isna()
+    logger.info("Need geocoding for %d/%d rows", missing.sum(), len(df))
     failures = []
-    for idx, row in df.iterrows():
+    for idx, row in df[missing].iterrows():
         lat, lon = try_geocode(row["address"], geocode)
         if lat is None:
             failures.append(row["address"])
@@ -93,10 +80,9 @@ def main(input_csv: Path, output_csv: Path) -> None:
         df.at[idx, "lon"] = lon
 
     if failures:
-        logger.warning("Still missing coordinates for %d addresses", len(failures))
-        logger.debug("Failures: %s", failures)
+        logger.warning("Failed geocoding %d addresses; leaving NaN", len(failures))
 
-    # Recompute size_bucket based on member_count
+    # Recompute size_bucket
     bins = [0, 100, 500, float("inf")]
     labels = ["small", "medium", "large"]
     df["size_bucket"] = pd.cut(df["member_count"], bins=bins, labels=labels)
@@ -106,23 +92,13 @@ def main(input_csv: Path, output_csv: Path) -> None:
     df.to_csv(output_csv, index=False)
     logger.info("Wrote %d rows → %s", len(df), output_csv)
 
-
 if __name__ == "__main__":
-    parser = ArgumentParser(
-        description="Geocode club associations and enrich with coordinates"
+    p = ArgumentParser(description="Geocode club associations")
+    p.add_argument("input_csv", type=Path, help="Raw CSV (no lat/lon)")
+    p.add_argument(
+        "-o", "--output", type=Path,
+        help="Out CSV (default: same dir, suffix '_with_coords.csv')"
     )
-    parser.add_argument(
-        "input_csv",
-        type=Path,
-        help="Path to input associations CSV (e.g. data/associations_goteborg.csv)"
-    )
-    parser.add_argument(
-        "--output",
-        "-o",
-        type=Path,
-        default=None,
-        help="Output CSV path (default: same directory, suffix '_with_coords.csv')"
-    )
-    args = parser.parse_args()
-    out_path = args.output or args.input_csv.with_name(f"{args.input_csv.stem}_with_coords.csv")
-    main(args.input_csv, out_path)
+    args = p.parse_args()
+    out = args.output or args.input_csv.with_name(f"{args.input_csv.stem}_with_coords.csv")
+    main(args.input_csv, out)

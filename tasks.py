@@ -21,6 +21,11 @@ def train(c):
     c.run("python -m sponsor_match.models.clustering")
 
 @task
+def train_classifier(c):
+    """Train the ML-based matching model."""
+    c.run("python -m sponsor_match.cli.train_matcher")
+
+@task
 def app(c):
     """Launch the Streamlit application."""
-    c.run("streamlit run sponsor_match/app_v2.py", pty=True)
+    c.run("streamlit run sponsor_match/ui/app_v2.py", pty=True)

@@ -2,78 +2,59 @@
 """
 sponsor_match/data/ingest_associations.py
 -----------------------------------------
-Loads a CSV file of club associations (with lat/lon) into the MySQL `clubs` table.
-
-Usage:
-    python -m sponsor_match.data.ingest_associations --csv-path data/associations_goteborg_with_coords.csv
+Read a geocoded associations CSV and append into the `clubs` table.
 """
 
-import sys
 import logging
 from argparse import ArgumentParser
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy import text
-from sponsor_match.core.db import get_engine
+from sqlalchemy import create_engine
 
-# Configure logger
-logger = logging.getLogger(__name__)
+# Configure logging
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     level=logging.INFO,
 )
+logger = logging.getLogger(__name__)
 
-def main(csv_path: Path) -> None:
-    """
-    Read club data from a CSV and load into the `clubs` table in the database.
-    """
-    # 1. Read CSV
-    try:
-        df = pd.read_csv(csv_path)
-        logger.info("Loaded %d rows from %s", len(df), csv_path)
-    except FileNotFoundError:
-        logger.error("CSV file not found at %s", csv_path)
-        sys.exit(1)
-    except pd.errors.EmptyDataError:
-        logger.error("CSV file at %s is empty", csv_path)
-        sys.exit(1)
-    except Exception as e:
-        logger.exception("Error reading CSV: %s", e)
-        sys.exit(1)
+def main(csv_path: Path, db_url: str | None) -> None:
+    # Determine DB URL (fallback to env if not passed)
+    url = db_url or None
+    if not url:
+        logger.error("No database URL provided. Use --db-url or set MYSQL_URL_OVERRIDE.")
+        raise SystemExit(1)
 
-    # 2. Define DDL for `clubs` table
-    ddl = """
-    CREATE TABLE IF NOT EXISTS clubs (
-        id           INT PRIMARY KEY AUTO_INCREMENT,
-        name         VARCHAR(200),
-        member_count INT,
-        address      TEXT,
-        size_bucket  ENUM('small','medium','large'),
-        lat          DOUBLE,
-        lon          DOUBLE
-    ) CHARACTER SET utf8mb4;
-    """
+    engine = create_engine(url)
 
-    # 3. Write to database
-    engine = get_engine()
-    try:
-        with engine.begin() as conn:
-            conn.execute(text(ddl))
-            # Overwrite the table with the new data
-            df.to_sql("clubs", conn, if_exists="replace", index=False)
-            logger.info("Wrote %d rows to `clubs` table", len(df))
-    except Exception as e:
-        logger.exception("Database error: %s", e)
-        sys.exit(1)
+    # Read CSV
+    logger.info("Reading %s", csv_path)
+    df = pd.read_csv(csv_path)
+    logger.info("Read %d rows from %s", len(df), csv_path)
+
+    # We're inserting into `clubs`, not `companies`
+    table_name = "clubs"
+
+    # Drop `id` if present; the clubs table has its own AUTO_INCREMENT primary key
+    if "id" in df.columns:
+        logger.info("Dropping 'id' column before insert into %s", table_name)
+        df = df.drop(columns=["id"])
+
+    # Write to clubs
+    logger.info("Writing %d rows into `%s`", len(df), table_name)
+    df.to_sql(table_name, engine, if_exists="append", index=False)
 
 if __name__ == "__main__":
-    parser = ArgumentParser(description="Load club CSV into the `clubs` table")
-    parser.add_argument(
-        "--csv-path",
-        type=Path,
-        default=Path(__file__).resolve().parents[2] / "data" / "associations_goteborg_with_coords.csv",
-        help="Path to the club associations CSV file"
+    p = ArgumentParser(description="Ingest geocoded associations into DB")
+    p.add_argument(
+        "--db-url", "-d", default="",
+        help="SQLAlchemy URL for your MySQL database"
     )
-    args = parser.parse_args()
-    main(args.csv_path)
+    p.add_argument(
+        "csv_path",
+        type=Path,
+        help="Path to geocoded associations CSV"
+    )
+    args = p.parse_args()
+    main(args.csv_path, args.db_url)
