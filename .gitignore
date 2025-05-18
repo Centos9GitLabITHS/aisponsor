@@ -1,0 +1,26 @@
+# Cache files
+.geo_cache.sqlite3
+geocode_cache.db
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+.venv312/
+
+# Output directories
+utils_output/
+
+# Temporary and system files
+.DS_Store
+*.log
+*.tgz
+*.gz
+
+# IDE specific files
+.idea/
+.vscode/
+.idea/
+**/__pycache__/
+*.pyc
