@@ -10,9 +10,8 @@ Usage: python tests/manual_test_checklist.py
 """
 
 import sys
-from pathlib import Path
 from datetime import datetime
-import os
+from pathlib import Path
 
 # Add the project root to Python path so we can import our modules
 project_root = Path(__file__).parent.parent
@@ -260,28 +259,28 @@ def test_entity_models():
         # Since these aren't SQLAlchemy models, we can't query them directly
         print_instruction("\nTesting data loading through table queries...")
         from sponsor_match.core.db import get_engine
-        from sqlalchemy import text*
+        import sqlalchemy
 
         engine = get_engine()
         with engine.connect() as conn:
             # Query clubs table directly
-            result = conn.execute(text("SELECT COUNT(*) FROM clubs"))
+            result = conn.execute(sqlalchemy.text("SELECT COUNT(*) FROM clubs"))
             club_count = result.scalar()
             print_success(f"Found {club_count} clubs in database")
 
             # Query companies table directly
-            result = conn.execute(text("SELECT COUNT(*) FROM companies"))
+            result = conn.execute(sqlalchemy.text("SELECT COUNT(*) FROM companies"))
             company_count = result.scalar()
             print_success(f"Found {company_count} companies in database")
 
             # Get sample data
             if club_count > 0:
-                result = conn.execute(text("SELECT name FROM clubs LIMIT 1"))
+                result = conn.execute(sqlalchemy.text("SELECT name FROM clubs LIMIT 1"))
                 sample_club = result.fetchone()
                 print(f"Sample club: {sample_club[0]}")
 
             if company_count > 0:
-                result = conn.execute(text("SELECT name FROM companies LIMIT 1"))
+                result = conn.execute(sqlalchemy.text("SELECT name FROM companies LIMIT 1"))
                 sample_company = result.fetchone()
                 print(f"Sample company: {sample_company[0]}")
 
@@ -304,7 +303,7 @@ def test_distance_calculation():
     try:
         # The distance function exists in features module
         print_instruction("Importing distance calculation function...")
-        from sponsor_match.models.features import FeatureEngineer calculate_distance_km
+        from sponsor_match.models.features import FeatureEngineer
         print_success("Found calculate_distance_km in features module")
 
         print_instruction("\nTesting distance calculation with known points...")
@@ -314,7 +313,7 @@ def test_distance_calculation():
         # Nearby location (about 1.3 km away)
         lat2, lon2 = 57.7200, 11.9800
 
-        distance = FeatureEngineer.FeatureEngineer.calculate_distance_km(lat1, lon1, lat2, lon2)
+        distance = FeatureEngineer.calculate_distance_km(lat1, lon1, lat2, lon2)
 
         print(f"Point 1: ({lat1}, {lon1}) - City center")
         print(f"Point 2: ({lat2}, {lon2})")

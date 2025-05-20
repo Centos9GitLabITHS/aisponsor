@@ -21,27 +21,29 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DDL = dedent("""
-    CREATE TABLE IF NOT EXISTS clubs (
-        id           INT PRIMARY KEY AUTO_INCREMENT,
-        name         VARCHAR(120),
-        size_bucket  ENUM('small','medium','large'),
-        lat          DOUBLE,
-        lon          DOUBLE
-    ) CHARACTER SET utf8mb4;
-
-    CREATE TABLE IF NOT EXISTS companies (
-        id            INT PRIMARY KEY AUTO_INCREMENT,
-        orgnr         CHAR(10),
-        name          VARCHAR(200),
-        revenue_ksek  DOUBLE,
-        employees     INT,
-        year          INT,
-        rev_per_emp   DOUBLE,
-        size_bucket   ENUM('small','medium','large'),
-        industry      VARCHAR(120),
-        lat           DOUBLE,
-        lon           DOUBLE
-    ) CHARACTER SET utf8mb4;
+   CREATE TABLE IF NOT EXISTS clubs (
+        id             INT PRIMARY KEY AUTO_INCREMENT,
+        name           VARCHAR(120),
+        member_count   INT,
+        address        TEXT,
+        lat            DOUBLE,
+        lon            DOUBLE,
+        size_bucket    ENUM('small','medium','large'),
+        founded_year   INT
+   ) CHARACTER SET utf8mb4;
+   
+   CREATE TABLE IF NOT EXISTS companies (
+       id           INT AUTO_INCREMENT PRIMARY KEY,
+       orgnr        CHAR(10),
+       name         VARCHAR(200),
+       revenue_ksek DOUBLE,
+       employees    INT,
+       year         INT,
+       size_bucket  ENUM('small','medium','large'),
+       industry     VARCHAR(120),
+       lat          DOUBLE,
+       lon          DOUBLE
+   ) CHARACTER SET utf8mb4;
 """)
 
 def main(dry_run: bool = False) -> None:

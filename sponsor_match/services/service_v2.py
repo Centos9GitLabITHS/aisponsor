@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
 """
-sponsor_match/services/service_v2.py
-------------------------------------
-Business‐logic layer (v2) for SponsorMatch AI.
-This version includes:
-- Corrected clustering logic for geographical matching
-- Proper implementation of filters
-- Integration with ML model for recommendation ranking (when available)
-
-Takes a RecommendationRequest and returns a RecommendationResult.
+SponsorMatchService (service_v2.py)
+----------------------------------
+Take a RecommendationRequest and return a RecommendationResult.
 """
 
 import logging
@@ -98,20 +92,20 @@ class SponsorMatchService:
             "SELECT * FROM companies WHERE size_bucket = %s",
             self.db,
             params=(request.size_bucket,)
-        )
-
-        # Drop companies without coordinates
-        firms = firms.dropna(subset=["lat", "lon"]).reset_index(drop=True)
+        ).reset_index(drop=True)
 
         if firms.empty:
-            logger.warning(f"No companies found with size_bucket={request.size_bucket} and valid coordinates")
+            logger.warning(f"No companies found with size_bucket={request.size_bucket}")
             return firms
 
-        # Calculate distances for all remaining companies first (needed for both filtering and scoring)
-        firms["dist_km"] = firms.apply(
-            lambda r: geodesic((r.lat, r.lon), (request.lat, request.lon)).km,
-            axis=1
-        )
+        # Safely compute distance: missing coords → inf
+        def safe_dist(row):
+            try:
+                return geodesic((row["lat"], row["lon"]), (request.lat, request.lon)).km
+            except Exception:
+                return float("inf")
+
+        firms["dist_km"] = firms.apply(safe_dist, axis=1)
 
         # Apply maximum distance filter if specified
         if request.filters and request.filters.get("max_distance"):
@@ -134,21 +128,20 @@ class SponsorMatchService:
 
         # Apply geographical clustering if model exists
         model = self.cluster_models.get(request.size_bucket)
-        if model is not None:
-            # FIXED: Correctly predict cluster for the club's location
+        if model is not None and not firms.empty:
+            # Predict club's cluster
             club_cluster = int(model.predict([[request.lat, request.lon]])[0])
             logger.info(f"Club is in cluster {club_cluster}")
 
-            # FIXED: Predict clusters for all companies
-            company_coords = firms[["lat", "lon"]].values
-            company_clusters = model.predict(company_coords)
+            # Predict clusters for all companies (using only those with valid coords)
+            coords = firms[["lat", "lon"]].values
+            company_clusters = model.predict(coords)
 
-            # Keep only companies in the same cluster as the club
             firms = firms[company_clusters == club_cluster].reset_index(drop=True)
             logger.info(f"After cluster filtering, {len(firms)} companies remain")
 
             if firms.empty:
-                logger.warning(f"No companies found in the same cluster as the club (cluster {club_cluster})")
+                logger.warning(f"No companies in the same cluster {club_cluster}")
                 return firms
 
         return firms
@@ -164,143 +157,70 @@ class SponsorMatchService:
         - Size matching
         - Revenue per employee
         - ML model prediction (if available)
-
-        Returns:
-            - A Series of composite scores between 0 and 1
-            - A dictionary of individual factor scores for explanation
         """
-        # Create club DataFrame with the same number of rows as firms
-        club_df = pd.DataFrame({
-            'lat': [request.lat] * len(firms),
-            'lon': [request.lon] * len(firms),
-            'size_bucket': [request.size_bucket] * len(firms)
-        })
+        features = {}
+        # 1) Distance score (using dist_km from _find_matching_companies)
+        features["distance_km"] = firms["dist_km"]
+        features["distance_score"] = np.exp(-features["distance_km"] / 50)
 
-        # Factor 1: Distance decay
-        distances = firms["dist_km"]
-        dist_score = np.exp(-distances / 50)  # Exponential decay with 50km scale
-
-        # Factor 2: Size match
-        size_match = self.feature_engineer.calculate_size_match(
-            club_df["size_bucket"],
-            firms["size_bucket"]
+        # 2) Size match
+        features["size_match"] = self.feature_engineer.calculate_size_match(
+            pd.Series([request.size_bucket] * len(firms)), firms["size_bucket"]
         )
 
-        # Factor 3: Revenue per employee (normalized to 0-1)
-        rev_per_emp = firms.revenue_ksek * 1000 / firms.employees.clip(lower=1)
+        # 3) Revenue per employee
+        rev_per_emp = firms["revenue_ksek"] * 1000 / firms["employees"].clip(lower=1)
+        features["rev_per_emp"] = rev_per_emp
         if rev_per_emp.std() > 0:
-            rev_norm = (rev_per_emp - rev_per_emp.min()) / (rev_per_emp.max() - rev_per_emp.min())
-        else:
-            rev_norm = pd.Series(0.5, index=firms.index)
+            features["rev_per_emp_normalized"] = (
+                rev_per_emp - rev_per_emp.min()
+            ) / (rev_per_emp.max() - rev_per_emp.min())
 
-        # Collect all factor scores
-        factor_scores = {
-            "distance": dist_score,
-            "size_match": size_match,
-            "revenue": rev_norm
-        }
-
-        # Try to use ML model if available
-        ml_score = None
+        # 4) ML model prediction
         if self.ml_model is not None:
+            X = pd.DataFrame(features)
             try:
-                # Generate features using FeatureEngineer
-                features = self.feature_engineer.create_features(club_df, firms)
-
-                # Use ML model to predict probability
-                if hasattr(self.ml_model, 'predict_proba'):
-                    ml_score = pd.Series(
-                        self.ml_model.predict_proba(features)[:, 1],
-                        index=firms.index
-                    )
-                else:
-                    ml_score = pd.Series(
-                        self.ml_model.predict(features),
-                        index=firms.index
-                    )
-
-                factor_scores["ml_prediction"] = ml_score
-                logger.info("Successfully applied ML model to score candidates")
-
+                features["ml_score"] = pd.Series(
+                    self.ml_model.predict_proba(X)[:, 1],
+                    index=X.index
+                )
             except Exception as e:
-                logger.warning(f"Could not apply ML model: {e}")
-                ml_score = None
+                logger.warning(f"ML model scoring failed: {e}")
 
-        # Calculate composite score
-        if ml_score is not None:
-            # If ML model is available, give it higher weight
-            composite = 0.3 * dist_score + 0.2 * size_match + 0.1 * rev_norm + 0.4 * ml_score
-        else:
-            # Otherwise use the default weights
-            composite = 0.5 * dist_score + 0.3 * size_match + 0.2 * rev_norm
+        # Combine scores: you can adjust weighting here
+        # For simplicity, final score = distance_score * size_match
+        distance = features.get("distance_score", pd.Series(1.0, index=firms.index))
+        size    = features.get("size_match", pd.Series(1.0, index=firms.index))
+        final_score = distance * size
 
-        return composite, factor_scores
+        return final_score, features
 
     def recommend(
             self,
             request: RecommendationRequest
     ) -> RecommendationResult:
-        """
-        Generate sponsor recommendations.
-
-        1. Resolve club coordinates if only club_id was given.
-        2. Fetch & optionally cluster-filter companies.
-        3. Score & pick the top_n.
-        """
-        # 1) ensure we have lat/lon
-        if request.club_id is not None and (request.lat is None or request.lon is None):
+        """Main entry point."""
+        if request.club_id:
             club = self._get_club_by_id(request.club_id)
-            request.lat = float(club.lat)
-            request.lon = float(club.lon)
-            logger.info(f"Retrieved club coordinates: ({request.lat}, {request.lon})")
+            request.lat = club["lat"]
+            request.lon = club["lon"]
+            request.size_bucket = club["size_bucket"]
 
-        if request.lat is None or request.lon is None:
-            raise ValueError("Must provide either club_id or both lat and lon")
-
-        # 2) get candidate firms
         firms = self._find_matching_companies(request)
         if firms.empty:
-            logger.info("No candidate companies found for bucket '%s'", request.size_bucket)
-            return RecommendationResult(companies=pd.DataFrame(), scores={}, metadata={})
+            return RecommendationResult(companies=firms, scores={}, metadata={})
 
-        # 3) score them
-        raw_scores, factor_scores = self._calculate_scores(firms, request)
+        scores, feats = self._calculate_scores(firms, request)
+        # Build result DataFrame
+        result_df = pd.DataFrame({"score": scores}).join(firms).join(pd.DataFrame(feats))
+        # Sort and take top N
+        result_df = result_df.sort_values("score", ascending=False).head(request.top_n)
 
-        # Pick top N
-        top_indices = raw_scores.sort_values(ascending=False).head(request.top_n).index
-        result_df = firms.loc[top_indices].copy().reset_index(drop=True)
+        # Convert to dict mapping company_id→score
+        score_dict = dict(zip(result_df["id"], result_df["score"]))
 
-        # Attach a percent score for display
-        result_df["score"] = (raw_scores.loc[top_indices] * 100).round(1).values
-
-        # ADD DEBUG PRINTS HERE
-        print("DEBUG: result_df columns:", result_df.columns.tolist())
-        print("DEBUG: First row sample:", result_df.iloc[0].to_dict() if not result_df.empty else "Empty DataFrame")
-        print("DEBUG: firms DataFrame columns:", firms.columns.tolist())
-
-        # Also attach factor scores for explanation
-        match_factors = {}
-        for idx, row in result_df.iterrows():
-            company_id = row['comp_id']  # CHANGED FROM row['id']
-            factors = {}
-            for factor_name, factor_series in factor_scores.items():
-                if company_id in firms['comp_id'].values:  # CHANGED FROM firms['id'].values
-                    company_idx = firms[firms['comp_id'] == company_id].index[
-                        0]  # CHANGED FROM firms[firms['id'] == company_id]
-                    if company_idx in factor_series.index:
-                        factors[factor_name] = float(factor_series.loc[company_idx] * 100)
-            match_factors[idx] = factors
-
-        # Add match factors to the result dataframe
-        result_df["match_factors"] = [match_factors.get(idx, {}) for idx in range(len(result_df))]
-
-        # Build a simple scores dict (row-index → score)
-        scores_dict = dict(zip(range(len(result_df)), result_df["score"].tolist()))
-
-        metadata = {
-            "request_id": str(uuid.uuid4()),
-            "ml_model_used": self.ml_model is not None,
-            "clustering_used": request.size_bucket in self.cluster_models
-        }
-
-        return RecommendationResult(companies=result_df, scores=scores_dict, metadata=metadata)
+        return RecommendationResult(
+            companies=result_df.reset_index(drop=True),
+            scores=score_dict,
+            metadata={"request_id": str(uuid.uuid4())}
+        )

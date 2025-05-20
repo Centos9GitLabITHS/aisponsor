@@ -22,13 +22,13 @@ class FeatureEngineer:
     Compute pairwise features between clubs and companies for recommendation ranking.
 
     This class contains methods for calculating various features used in matching
-    sponsors with clubs, including geographic distance, size compatibility,
-    industry affinity, and economic indicators.
+    sponsors with clubs, including geographic distance, size compatibility, industry
+    affinity, and economic indicators.
     """
 
     @staticmethod
     def calculate_distance_km(
-            lat1: float, lon1: float, lat2: float, lon2: float
+        lat1: float, lon1: float, lat2: float, lon2: float
     ) -> float:
         """
         Calculate the geodesic distance in kilometers between two latitude/longitude points.
@@ -48,13 +48,17 @@ class FeatureEngineer:
         Raises
         ------
         TypeError
-            If any coordinates are None or not convertible to float.
+            If any coordinates are None.
         ValueError
-            If coordinates are invalid for distance calculation.
+            If any coordinates are zero or negative, or otherwise invalid.
         """
-        # Add explicit None check to match test expectations
-        if any(x is None for x in [lat1, lon1, lat2, lon2]):
+        # 1) None check
+        if any(x is None for x in (lat1, lon1, lat2, lon2)):
             raise TypeError("Coordinates cannot be None")
+
+        # 2) Domain check: all lats/lons must be positive in our context
+        if any(v <= 0 for v in (lat1, lon1, lat2, lon2)):
+            raise ValueError(f"Invalid coordinates for distance calculation: {(lat1, lon1, lat2, lon2)}")
 
         try:
             return geodesic((lat1, lon1), (lat2, lon2)).km
@@ -64,32 +68,16 @@ class FeatureEngineer:
 
     @staticmethod
     def add_distance(
-            df: pd.DataFrame,
-            lat: float,
-            lon: float,
-            lat_col: str = "lat",
-            lon_col: str = "lon",
-            new_col: str = "distance_km",
+        df: pd.DataFrame,
+        lat: float,
+        lon: float,
+        lat_col: str = "lat",
+        lon_col: str = "lon",
+        new_col: str = "distance_km",
     ) -> pd.DataFrame:
         """
         Return a copy of `df` with a new column `new_col` representing the distance
         from the fixed point (`lat`, `lon`) to each row's (lat_col, lon_col).
-
-        Parameters
-        ----------
-        df : DataFrame
-            Input data with latitude/longitude columns.
-        lat, lon : float
-            Reference point coordinates.
-        lat_col, lon_col : str, default "lat","lon"
-            Column names in `df` for latitude and longitude.
-        new_col : str, default "distance_km"
-            Name of the output distance column.
-
-        Returns
-        -------
-        DataFrame
-            Copy of `df` with the added distance column.
         """
         df_copy = df.copy()
         df_copy[new_col] = df_copy.apply(
@@ -104,16 +92,6 @@ class FeatureEngineer:
     def bucket_assoc_size(members: int) -> str:
         """
         Bucket a club's member count into 'small', 'medium', or 'large'.
-
-        Parameters
-        ----------
-        members : int
-            Number of members in the association.
-
-        Returns
-        -------
-        str
-            One of "small" (<200), "medium" (<1000), or "large" (>=1000).
         """
         if members < 200:
             return "small"
@@ -123,41 +101,21 @@ class FeatureEngineer:
 
     @staticmethod
     def calculate_distance(
-            club_coords: pd.DataFrame,
-            comp_coords: pd.DataFrame
+        club_coords: pd.DataFrame,
+        comp_coords: pd.DataFrame
     ) -> pd.Series:
         """
-        Compute geodesic distance (km) between each club–company pair.
-
-        This batch method is more efficient than applying calculate_distance_km
-        individually when processing many pairs.
-
-        Parameters
-        ----------
-        club_coords : DataFrame
-            DataFrame with lat/lon columns for clubs
-        comp_coords : DataFrame
-            DataFrame with lat/lon columns for companies
-
-        Returns
-        -------
-        Series
-            Distances in kilometers, named "distance_km"
-
-        Notes
-        -----
-        Both DataFrames must have the same length and matching rows.
+        Compute geodesic distance (km) between each club–company pair (row-wise).
         """
         if len(club_coords) != len(comp_coords):
             raise ValueError("Input DataFrames must have the same length")
 
-        # Use vectorized calculation when possible, falling back to row-wise
         distances = [
             FeatureEngineer.calculate_distance_km(
                 club_coords.iloc[i]["lat"],
                 club_coords.iloc[i]["lon"],
                 comp_coords.iloc[i]["lat"],
-                comp_coords.iloc[i]["lon"]
+                comp_coords.iloc[i]["lon"],
             )
             for i in range(len(club_coords))
         ]
@@ -165,23 +123,11 @@ class FeatureEngineer:
 
     @staticmethod
     def calculate_size_match(
-            club_sizes: pd.Series,
-            comp_sizes: pd.Series
+        club_sizes: pd.Series,
+        comp_sizes: pd.Series
     ) -> pd.Series:
         """
         Score size compatibility: exact match → 1.0; adjacent → 0.5; else → 0.0.
-
-        Parameters
-        ----------
-        club_sizes : Series
-            Size categories for clubs (small/medium/large)
-        comp_sizes : Series
-            Size categories for companies (small/medium/large)
-
-        Returns
-        -------
-        Series
-            Compatibility scores between 0 and 1
         """
         size_map = {"small": 0, "medium": 1, "large": 2}
 
@@ -194,96 +140,43 @@ class FeatureEngineer:
                 return 0.5
             return 0.0
 
-        scores = [
-            _score(c, p) for c, p in zip(club_sizes, comp_sizes)
-        ]
+        scores = [_score(c, p) for c, p in zip(club_sizes, comp_sizes)]
         return pd.Series(scores, name="size_match")
 
     @staticmethod
     def calculate_industry_affinity(
-            sport_types: pd.Series,
-            industries: pd.Series
+        sport_types: pd.Series,
+        industries: pd.Series
     ) -> pd.Series:
         """
-        Calculate industry-sport affinity score.
-
-        Returns 1.0 if any sport in a club's sport_types list appears
-        in the company's industry description.
-
-        Parameters
-        ----------
-        sport_types : Series
-            Lists of sport types for each club
-        industries : Series
-            Industry descriptions for companies
-
-        Returns
-        -------
-        Series
-            Binary affinity scores (0.0 or 1.0)
+        Calculate industry-sport affinity score (0.0 or 1.0).
         """
-
         def _affinity(sports, industry):
-            if not isinstance(sports, list):
-                return 0.0
-            if not isinstance(industry, str):
+            if not isinstance(sports, list) or not isinstance(industry, str):
                 return 0.0
             return 1.0 if any(sp.lower() in industry.lower() for sp in sports) else 0.0
 
-        affinities = [
-            _affinity(s, i) for s, i in zip(sport_types, industries)
-        ]
+        affinities = [_affinity(s, i) for s, i in zip(sport_types, industries)]
         return pd.Series(affinities, name="industry_sport_affinity")
 
     @staticmethod
     def calculate_growth_rate(
-            companies_df: pd.DataFrame
+        companies_df: pd.DataFrame
     ) -> pd.Series:
         """
-        Calculate company growth rate.
-
-        Currently a placeholder returning zeros; implement with actual
-        growth calculation when time-series data becomes available.
-
-        Parameters
-        ----------
-        companies_df : DataFrame
-            Company data including relevant growth metrics
-
-        Returns
-        -------
-        Series
-            Growth rate scores
+        Placeholder for company growth rate; returns zeros until time-series data is available.
         """
         return pd.Series(0.0, index=companies_df.index, name="growth_rate")
 
     @staticmethod
     def urban_rural_compatibility(
-            club_loc: pd.Series,
-            comp_loc: pd.Series
+        club_loc: pd.Series,
+        comp_loc: pd.Series
     ) -> pd.Series:
         """
-        Calculate location type compatibility.
-
-        Returns 1.0 if club and company share the same location_type
-        (e.g., both urban or both rural), 0.0 otherwise.
-
-        Parameters
-        ----------
-        club_loc : Series
-            Location types for clubs
-        comp_loc : Series
-            Location types for companies
-
-        Returns
-        -------
-        Series
-            Binary compatibility scores (0.0 or 1.0)
+        Binary match if club and company share the same location_type.
         """
-        compat = [
-            1.0 if cl == cp else 0.0
-            for cl, cp in zip(club_loc, comp_loc)
-        ]
+        compat = [1.0 if cl == cp else 0.0 for cl, cp in zip(club_loc, comp_loc)]
         return pd.Series(compat, name="urban_rural_match")
 
     @classmethod
@@ -291,102 +184,59 @@ class FeatureEngineer:
         """
         Create a feature DataFrame for club–company pairs for the matching model.
 
-        This method is primarily used by the training pipeline. For production
-        recommendations, use create_features() instead.
-
-        Parameters
-        ----------
-        df : DataFrame
-            DataFrame with club and company attributes merged into single rows.
-            Required columns include:
-              - 'club_lat', 'club_lon', 'company_lat', 'company_lon'
-              - 'club_size', 'company_size'
-              - 'revenue_ksek', 'employees'
-
-        Returns
-        -------
-        DataFrame
-            Features for each club-company pair:
-              - distance_km: exact geodesic distance
-              - size_match: 1.0 if same bucket, 0.5 if adjacent, else 0.0
-              - rev_per_emp: revenue per employee
-              - rev_per_emp_normalized: scaled to [0,1] if std > 0
-              - distance_score: exp(−distance_km/50) decay
+        Returns features:
+          - distance_km: exact geodesic distance
+          - size_match: size compatibility score
+          - revenue_ksek: raw revenue value (in tkr)
+          - employees: raw employee count
+          - distance_score: exp(-distance_km/50) decay
         """
         features: Dict[str, pd.Series] = {}
 
-        # Distance feature
-        if all(
-                col in df.columns
-                for col in ["club_lat", "club_lon", "company_lat", "company_lon"]
-        ):
+        # Distance
+        if all(col in df.columns for col in ["club_lat", "club_lon", "company_lat", "company_lon"]):
             features["distance_km"] = df.apply(
                 lambda r: cls.calculate_distance_km(
-                    r["club_lat"],
-                    r["club_lon"],
-                    r["company_lat"],
-                    r["company_lon"],
+                    r["club_lat"], r["club_lon"],
+                    r["company_lat"], r["company_lon"]
                 ),
-                axis=1,
+                axis=1
             )
 
         # Size compatibility
         if "club_size" in df.columns and "company_size" in df.columns:
-            size_map = {"small": 0, "medium": 1, "large": 2}
+            features["size_match"] = cls.calculate_size_match(
+                df["club_size"], df["company_size"]
+            )
 
-            def _size_score(row: pd.Series) -> float:
-                a = size_map.get(row["club_size"], 0)
-                b = size_map.get(row["company_size"], 0)
-                if a == b:
-                    return 1.0
-                if abs(a - b) == 1:
-                    return 0.5
-                return 0.0
+        # Raw financial and headcount features
+        if "revenue_ksek" in df.columns:
+            features["revenue_ksek"] = df["revenue_ksek"].rename("revenue_ksek")
+        if "employees" in df.columns:
+            features["employees"] = df["employees"].rename("employees")
 
-            features["size_match"] = df.apply(_size_score, axis=1)
-
-        # Revenue per employee
-        if "revenue_ksek" in df.columns and "employees" in df.columns:
-            rev_per_emp = df["revenue_ksek"] * 1000 / df["employees"].clip(lower=1)
-            features["rev_per_emp"] = rev_per_emp
-            if rev_per_emp.std() > 0:
-                features["rev_per_emp_normalized"] = (
-                                                             rev_per_emp - rev_per_emp.min()
-                                                     ) / (rev_per_emp.max() - rev_per_emp.min())
-
-        # Exponential distance score
+        # Exponential distance decay
         if "distance_km" in features:
             features["distance_score"] = np.exp(-features["distance_km"] / 50)
 
         return pd.DataFrame(features)
 
     def create_features(
-            self,
-            clubs_df: pd.DataFrame,
-            companies_df: pd.DataFrame
+        self,
+        clubs_df: pd.DataFrame,
+        companies_df: pd.DataFrame
     ) -> pd.DataFrame:
         """
-        Build a comprehensive feature DataFrame for each club–company pair.
+        Build a comprehensive feature set for each club–company pair.
 
-        This is the primary method for generating features in the recommendation
-        system, supporting a wider range of features than make_pair_features().
-
-        Parameters
-        ----------
-        clubs_df : DataFrame
-            Club data with equal rows to companies_df
-        companies_df : DataFrame
-            Company data with equal rows to clubs_df
-
-        Expected columns include:
-            ['lat','lon'], 'size_bucket', 'sport_types',
-            'industry', 'revenue_ksek', 'employees',
-            'founded_year', 'location_type'
-
-        Returns
-        -------
-        DataFrame
-            Complete feature set for ranking and recommendations
+        Returns features including:
+          - distance_km, distance_score
+          - size_match
+          - industry_sport_affinity
+          - revenue_ksek, employees
+          - company_age
+          - growth_rate
+          - urban_rural_match
         """
         feats: Dict[str, pd.Series] = {}
 
@@ -409,21 +259,16 @@ class FeatureEngineer:
                 clubs_df["sport_types"], companies_df["industry"]
             )
 
-        # 4) Revenue per employee
-        if "revenue_ksek" in companies_df.columns and "employees" in companies_df.columns:
-            rev_per_emp = (
-                    companies_df["revenue_ksek"] * 1000
-                    / companies_df["employees"].clip(lower=1)
-            )
-            feats["rev_per_emp"] = rev_per_emp.rename("rev_per_emp")
-            if rev_per_emp.std() > 0:
-                norm = (rev_per_emp - rev_per_emp.min()) / (rev_per_emp.max() - rev_per_emp.min())
-                feats["rev_per_emp_normalized"] = norm.rename("rev_per_emp_normalized")
+        # 4) Raw financial & headcount
+        if "revenue_ksek" in companies_df.columns:
+            feats["revenue_ksek"] = companies_df["revenue_ksek"].rename("revenue_ksek")
+        if "employees" in companies_df.columns:
+            feats["employees"] = companies_df["employees"].rename("employees")
 
         # 5) Company age
         if "founded_year" in companies_df.columns:
             feats["company_age"] = (
-                    datetime.now().year - companies_df["founded_year"]
+                datetime.now().year - companies_df["founded_year"]
             ).rename("company_age")
 
         # 6) Growth rate

@@ -5,14 +5,13 @@ models/entities.py
 Domain entity classes for SponsorMatch AI.
 """
 
-from dataclasses import dataclass, field
-from typing import Optional, List
+from dataclasses import dataclass
+from typing import Optional
 
-
-@dataclass(frozen=True)
+@dataclass
 class Club:
     """
-    Basic representation of a sports club.
+    Represents a sports club as loaded from the `clubs` table.
     """
     id: int
     name: str
@@ -21,15 +20,13 @@ class Club:
     lat: Optional[float]
     lon: Optional[float]
     size_bucket: str
-    founded_year: Optional[int]
-    sport_types: List[str] = field(default_factory=list)
-    youth_teams: int = 0
+    founded_year: int
 
 
-@dataclass(frozen=True)
+@dataclass
 class Company:
     """
-    Basic representation of a company sponsor.
+    Represents a company as loaded from the `companies` table.
     """
     id: int
     orgnr: str
@@ -41,4 +38,3 @@ class Company:
     lat: Optional[float]
     lon: Optional[float]
     industry: str
-    previous_sponsorships: List[str] = field(default_factory=list)

@@ -2,15 +2,17 @@
 """
 sponsor_match/data/ingest_associations.py
 -----------------------------------------
-Read a geocoded associations CSV and append into the `clubs` table.
+Read a geocoded associations CSV and load it idempotently into the `clubs` table.
 """
 
 import logging
 from argparse import ArgumentParser
 from pathlib import Path
+import sys
 
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import text
+from sponsor_match.core.db import get_engine
 
 # Configure logging
 logging.basicConfig(
@@ -20,41 +22,54 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def main(csv_path: Path, db_url: str | None) -> None:
-    # Determine DB URL (fallback to env if not passed)
-    url = db_url or None
-    if not url:
-        logger.error("No database URL provided. Use --db-url or set MYSQL_URL_OVERRIDE.")
-        raise SystemExit(1)
-
-    engine = create_engine(url)
+    """
+    Load the associations CSV into the `clubs` table.
+    If the table already has data, it will be truncated first.
+    """
+    # Build or fall back to config URL
+    engine = get_engine(db_url) if db_url else get_engine()
 
     # Read CSV
+    if not csv_path.exists():
+        logger.error("CSV file not found at %s", csv_path)
+        sys.exit(1)
+
     logger.info("Reading %s", csv_path)
-    df = pd.read_csv(csv_path)
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception as e:
+        logger.exception("Error reading CSV: %s", e)
+        sys.exit(1)
+
     logger.info("Read %d rows from %s", len(df), csv_path)
 
-    # We're inserting into `clubs`, not `companies`
-    table_name = "clubs"
-
-    # Drop `id` if present; the clubs table has its own AUTO_INCREMENT primary key
+    # Drop 'id' column if present, since clubs table has its own PK
     if "id" in df.columns:
-        logger.info("Dropping 'id' column before insert into %s", table_name)
+        logger.info("Dropping 'id' column before insert")
         df = df.drop(columns=["id"])
 
-    # Write to clubs
-    logger.info("Writing %d rows into `%s`", len(df), table_name)
-    df.to_sql(table_name, engine, if_exists="append", index=False)
+    # Idempotent load: truncate then append
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("TRUNCATE TABLE clubs"))
+            df.to_sql("clubs", conn, if_exists="append", index=False)
+            new_count = conn.execute(text("SELECT COUNT(*) FROM clubs")).scalar() or 0
+            logger.info("✅ Associations ingestion complete. Total clubs now: %d", new_count)
+    except Exception as e:
+        logger.exception("Database error during ingest: %s", e)
+        sys.exit(1)
 
 if __name__ == "__main__":
-    p = ArgumentParser(description="Ingest geocoded associations into DB")
-    p.add_argument(
-        "--db-url", "-d", default="",
-        help="SQLAlchemy URL for your MySQL database"
+    parser = ArgumentParser(description="Ingest geocoded associations into the clubs table")
+    parser.add_argument(
+        "--db-url", "-d",
+        default=None,
+        help="SQLAlchemy URL for your MySQL database (overrides env/config)"
     )
-    p.add_argument(
+    parser.add_argument(
         "csv_path",
         type=Path,
         help="Path to geocoded associations CSV"
     )
-    args = p.parse_args()
+    args = parser.parse_args()
     main(args.csv_path, args.db_url)

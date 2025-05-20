@@ -1,29 +1,27 @@
 [tool.poetry]
-name = "sponsor-match"
-version = "0.1.0"
+name        = "sponsor-match"
+version     = "0.1.0"
 description = "SponsorMatch AI – Streamlit app for matching sports clubs with sponsors"
-authors = ["University of Gothenburg Team 14 <you@example.com>"]
-license = "MIT"
-readme = "README.md"
-packages = [
-  { include = "sponsor_match" }
-]
-
-# ← Here’s the *only* place you declare your Python requirement:
-python = ">=3.9,<4.0"
+authors     = ["University of Gothenburg Team 14 <you@example.com>"]
+license     = "MIT"
+readme      = "README.md"
+packages    = [{ include = "sponsor_match" }]
 
 [tool.poetry.dependencies]
-# → REMOVE any `python = ...` line here if you have one
-streamlit             = "^1.24.0"
+python                  = ">=3.9,<4.0"
+streamlit              = "^1.31.0"
 mysql-connector-python = "^9.3.0"
-folium                = "^0.15.0"
-streamlit-folium      = "^0.12.0"
+folium                 = "^0.15.0"
+streamlit-folium       = "^0.12.0"
+numpy                  = ">=1.24.0,<2.0"
+pandas                 = ">=2.0.0,<3.0"
+scikit-learn           = ">=1.3.1,<2.0"
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 pytest = "^7.2"
 flake8 = "^6.0"
 black  = "^23.1.0"
 
 [build-system]
-requires    = ["poetry-core>=1.0.0"]
+requires      = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"

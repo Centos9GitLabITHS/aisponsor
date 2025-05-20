@@ -1,174 +1,245 @@
-#!/usr/bin/env python3
-"""
-sponsor_match/ui/app_v2.py
----------------------------
-Streamlit UI (v2) for SponsorMatch AI.
-"""
-
-import logging
-from pathlib import Path
-
-import joblib
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
-from folium import Map, Icon, Marker
-from folium.map import Popup
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+
+# Folium & Streamlit-Folium imports for the map
+from folium import Map, Marker, Popup, Icon
 from folium.plugins import MarkerCluster, HeatMap
 from streamlit_folium import st_folium
 
-from sponsor_match.core.config import config
-from sponsor_match.core.db import get_engine
-from sponsor_match.services.service_v2 import RecommendationRequest, SponsorMatchService
+# Fallback if st.modal isn’t available
+_open_modal = getattr(st, "modal", st.expander)
 
-# ─── Logging ────────────────────────────────────────────────────────────────
-logger = logging.getLogger(__name__)
-logging.basicConfig(
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    level=logging.INFO,
-)
 
-# ─── UI CLASS ───────────────────────────────────────────────────────────────
 class SponsorMatchUI:
     def __init__(self) -> None:
         st.set_page_config(
             page_title="SponsorMatch AI",
             page_icon="⚽",
             layout="wide",
-            initial_sidebar_state="expanded",
-        )
-        self.engine = get_engine()
-        self.clubs_df = self._load_clubs()
-
-    def _load_clubs(self) -> pd.DataFrame:
-        query = """
-            SELECT id, name, member_count, address, lat, lon, size_bucket
-            FROM clubs
-            ORDER BY name
-        """
-        return pd.read_sql(query, self.engine)
-
-    @staticmethod
-    def _marker_color(score: float) -> str:
-        if score >= 80:
-            return "green"
-        if score >= 50:
-            return "blue"
-        return "lightgray"
-
-    @staticmethod
-    def _club_popup(club: dict) -> str:
-        return f"""
-        <div>
-          <h4>{club.get('name','')}</h4>
-          <p>Members: {club.get('member_count','')}</p>
-          <p>Size: {club.get('size_bucket','')}</p>
-          <p>Address: {club.get('address','')}</p>
-        </div>
-        """
-
-    @staticmethod
-    def _company_popup(comp: dict) -> str:
-        return f"""
-        <div>
-          <h4>{comp.get('name','')}</h4>
-          <p>Score: {comp.get('score',0)}%</p>
-          <p>Industry: {comp.get('industry','')}</p>
-          <p>Distance: {comp.get('dist_km',0):.1f} km</p>
-        </div>
-        """
-
-    @staticmethod
-    def _radar_chart(factors: dict) -> go.Figure:
-        cats = list(factors.keys())
-        vals = list(factors.values())
-        theta = cats + cats[:1]
-        r = vals + vals[:1]
-        fig = go.Figure(
-            data=go.Scatterpolar(r=r, theta=theta, fill="toself")
-        )
-        fig.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-            showlegend=False,
-            margin=dict(l=30, r=30, t=30, b=30),
-        )
-        return fig
-
-    def _run_search(self, club_name: str, size_bucket: str, industries: list[str], max_distance: float):
-        # find club
-        row = self.clubs_df[self.clubs_df["name"] == club_name].iloc[0]
-        lat, lon = float(row["lat"]), float(row["lon"])
-        club_id = int(row["id"])
-        st.session_state["club_data"] = row.to_dict()
-
-        # prepare request
-        req = RecommendationRequest(
-            club_id=club_id,
-            lat=lat,
-            lon=lon,
-            size_bucket=size_bucket,
-            filters={"industries": industries, "max_distance": max_distance},
         )
 
-        # load whatever KMeans models exist
-        cluster_models: dict[str, joblib.Memory] = {}
-        for b in ("small", "medium", "large"):
-            path = Path(config.models_dir) / f"kmeans_{b}.joblib"
-            if path.exists():
-                cluster_models[b] = joblib.load(path)
+    def render_main_page(self) -> None:
+        # ─── GLOBAL STYLES ───────────────────────────────────────────────
+        st.markdown(
+            """
+            <style>
+              /* gradient, centering, card styling, etc. (omitted here for brevity) */
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # ─── HERO / HEADER ───────────────────────────────────────────────
+        logo_path = Path(__file__).parent / "assets" / "logo.png"
+        if logo_path.exists():
+            st.image(str(logo_path), width=180)
+        st.markdown(
+            "<h1 style='font-size:3rem; font-weight:800; text-align:center; color:#1e3a8a;'>Sponsorly</h1>",
+            unsafe_allow_html=True,
+        )
+
+        # ─── LOGIN BUTTON ───────────────────────────────────────────────
+        if st.button("Logga in", key="login_button"):
+            st.session_state["show_login"] = True
+
+        # ─── NAV TABS ───────────────────────────────────────────────────
+        tabs = st.tabs(
+            ["🏠 Hem", "🎯 Hitta sponsorer", "📘 Min förening", "📊 Sponsorförslag"]
+        )
+        with tabs[0]:
+            self._render_home()
+        with tabs[1]:
+            self._render_search()
+        with tabs[2]:
+            self._render_profile()
+        with tabs[3]:
+            self._render_suggestions()
+
+        # ─── MODALS ─────────────────────────────────────────────────────
+        if st.session_state.get("show_login"):
+            self._show_login_modal()
+        if st.session_state.get("selected_sponsor"):
+            self._show_sponsor_modal(st.session_state["selected_sponsor"])
+
+    # ─────────── HOME ─────────────────────────────────────────────────────
+    @staticmethod
+    def _render_home() -> None:
+        cards = [
+            ("✨", "Tips & tricks", "Råd för att locka sponsorer snabbare."),
+            ("⚙️", "Inställningar", "Justera profil, sekretess och synlighet."),
+            ("ℹ️", "Om Sponsorly", "Så fungerar plattformen och affärsmodellen."),
+            ("🤝", "Partnerskap", "Framgångscase och inspirerande stories."),
+            ("📣", "Nyheter", "Senaste uppdateringar och releaser."),
+            ("❓", "Support & FAQ", "Hjälp, guider och vanliga frågor."),
+        ]
+        cols = st.columns(3, gap="large")
+        for i, (icon, title, text) in enumerate(cards):
+            with cols[i % 3]:
+                st.markdown(
+                    f"""
+                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;
+                                padding:1.5rem;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                      <div style="font-size:2rem;color:#2563eb;margin-bottom:0.5rem;">{icon}</div>
+                      <div style="font-size:1.125rem;font-weight:600;color:#1e40af;margin-bottom:0.5rem;">{title}</div>
+                      <div style="font-size:0.875rem;color:#4b5563;">{text}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+    # ─────────── SEARCH (with MAP) ───────────────────────────────────────
+    def _render_search(self) -> None:
+        st.markdown(
+            "<h2 style='font-size:2rem;font-weight:600;color:#1e40af;'>Sök sponsorer</h2>",
+            unsafe_allow_html=True,
+        )
+        f1, f2 = st.columns(2, gap="large")
+        with f1:
+            city     = st.text_input("Ort", value="", key="filter_city")
+            radius   = st.slider("Radie (km)", 0, 100, 25, key="filter_radius")
+            industry = st.selectbox("Bransch", ["Bank", "Energi", "IT"], key="filter_industry")
+            size     = st.selectbox("Storlek", ["Liten", "Medel", "Stor"], key="filter_size")
+            if st.button("Sök", key="do_search"):
+                st.session_state["results"] = self._get_dummy_sponsors(city, radius, industry, size)
+
+        with f2:
+            results = st.session_state.get("results", [])
+            if not results:
+                st.info("Välj filter och klicka på Sök")
             else:
-                logger.warning("No model file for bucket %s → skipping", b)
+                # Results grid
+                cols = st.columns(2, gap="large")
+                for i, s in enumerate(results):
+                    with cols[i % 2]:
+                        st.markdown(
+                            f"""
+                            <div style="background:white;padding:1.5rem;border-radius:8px;
+                                        box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                              <div style="font-size:1.125rem;font-weight:700;color:#1e40af;">
+                                {s['name']}
+                              </div>
+                              <div style="font-size:0.875rem;color:#4b5563;">
+                                {s['description']}
+                              </div>
+                              <div style="margin-top:1rem;">
+                                <button style="background:#2563eb;color:white;padding:0.5rem 1rem;
+                                               border:none;border-radius:4px;">
+                                  📧 Kontakta
+                                </button>
+                              </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                # ─── Now call the restored map ─────────────────────────
+                st.markdown("### Kartvy", unsafe_allow_html=True)
+                self._render_map()
 
-        service = SponsorMatchService(self.engine, cluster_models=cluster_models)
-        res = service.recommend(req)
-        st.session_state["results"] = res.companies.to_dict("records")
-
-    def _render_recommendations(self):
-        recs = st.session_state.get("results", [])
-        if not recs:
-            st.info("👆 Select filters and click **Search** to find sponsors")
-            return
-
-        df = pd.DataFrame(recs)
-        st.metric("Matches Found", len(df))
-        st.dataframe(df[["name","revenue_ksek","employees","dist_km","industry","score"]])
-
-        for i, comp in enumerate(recs):
-            with st.expander(f"#{i+1} {comp['name']} — {comp['score']}%"):
-                c0, c1 = st.columns([2,1])
-                c0.markdown(f"**Industry:** {comp['industry']}")
-                c0.markdown(f"**Revenue:** {comp['revenue_ksek']}")
-                c0.markdown(f"**Employees:** {comp['employees']}")
-                c0.markdown(f"**Distance:** {comp['dist_km']:.1f} km")
-                c1.plotly_chart(self._radar_chart(comp.get("match_factors", {})), use_container_width=True)
-
+    # ─────────── PROFILE ────────────────────────────────────────────────────
     @staticmethod
-    def _render_analytics():
-        recs = st.session_state.get("results", [])
-        if not recs:
-            st.info("No data for analytics")
-            return
-        df = pd.DataFrame(recs)
-        st.plotly_chart(px.histogram(df, x="industry", title="Sponsors by Industry"), use_container_width=True)
-        st.plotly_chart(px.scatter(df, x="dist_km", y="score", title="Score vs. Distance"), use_container_width=True)
+    def _render_profile() -> None:
+        st.markdown(
+            "<h2 style='font-size:2rem;font-weight:600;color:#1e40af;'>Min förening</h2>",
+            unsafe_allow_html=True,
+        )
+        with st.form("profile_form"):
+            st.text_input("Föreningens namn", value="", key="profile_name")
+            st.text_input("Ort", value="", key="profile_city")
+            st.text_input("E-post", value="", key="profile_email")
+            st.text_input("Telefon", value="", key="profile_phone")
+            st.text_area("Sponsringsbehov", value="", key="profile_needs")
+            st.form_submit_button("Spara")
 
-    def _render_map(self):
-        club = st.session_state.get("club_data", {"lat":57.7089,"lon":11.9746})
+    # ─────────── SUGGESTIONS ───────────────────────────────────────────────
+    def _render_suggestions(self) -> None:
+        st.markdown(
+            "<h2 style='font-size:2rem;font-weight:600;color:#1e40af;'>Rekommenderade sponsorer</h2>",
+            unsafe_allow_html=True,
+        )
+        for i, s in enumerate(self._get_dummy_sponsors()):
+            col = st.columns(2, gap="large")[i % 2]
+            with col:
+                st.markdown(
+                    f"""
+                    <div style="background:#eff6ff;border:1px solid #bfdbfe;
+                                border-radius:8px;padding:1.5rem;text-align:center;
+                                box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                      <div style="font-size:1.125rem;font-weight:600;color:#1e40af;">
+                        {s['name']}
+                      </div>
+                      <div style="font-size:0.875rem;color:#4b5563;">
+                        {s['description']}
+                      </div>
+                      <div style="margin-top:1rem;">
+                        <button style="background:#2563eb;color:white;padding:0.5rem 1rem;
+                                       border:none;border-radius:4px;">
+                          📩 Kontakta
+                        </button>
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+    # ─────────── DUMMY DATA ────────────────────────────────────────────────
+    @staticmethod
+    def _get_dummy_sponsors(
+        city: Optional[str] = None,
+        radius: Optional[int] = None,
+        industry: Optional[str] = None,
+        size: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        _ = (city, radius, industry, size)
+        return [
+            {
+                "id": 1,
+                "name": "Nordic Bank",
+                "description": "Vill stötta lokal ungdomsidrott.",
+                "lat": 57.70,
+                "lon": 11.97,
+                "score": 75,
+                "contact": {"email": "kontakt@nordicbank.se", "phone": "08-123456"},
+            },
+            {
+                "id": 2,
+                "name": "Energigruppen AB",
+                "description": "Söker gröna partners.",
+                "lat": 57.71,
+                "lon": 11.98,
+                "score": 50,
+                "contact": {"email": "info@energi.se", "phone": "031-987654"},
+            },
+            {
+                "id": 3,
+                "name": "Techify Solutions",
+                "description": "Digital inkludering för unga.",
+                "lat": 57.72,
+                "lon": 11.99,
+                "score": 90,
+                "contact": {"email": "hej@techify.solutions", "phone": "070-112233"},
+            },
+        ]
+
+    # ─────────── RESTORED MAP METHOD ──────────────────────────────────────
+    def _render_map(self) -> None:
+        club = st.session_state.get(
+            "club_data", {"lat": 57.7089, "lon": 11.9746}
+        )
         recs = st.session_state.get("results", [])
 
-        center = [club.get("lat",57.7089), club.get("lon",11.9746)]
+        center = [club.get("lat", 57.7089), club.get("lon", 11.9746)]
         m = Map(location=center, zoom_start=11)
 
-        # club marker
+        # Club marker
         if "id" in club:
             Marker(
                 location=[club["lat"], club["lon"]],
-                popup=Popup(self._club_popup(club), max_width=300),
+                popup=Popup(f"<b>{club.get('name','Din förening')}</b>", max_width=300),
                 icon=Icon(color="red", icon="home"),
             ).add_to(m)
 
-        # sponsors
+        # Sponsors cluster + heatmap
         if recs:
             cluster = MarkerCluster().add_to(m)
             heat = []
@@ -178,57 +249,41 @@ class SponsorMatchUI:
                 if lat and lon:
                     Marker(
                         location=[lat, lon],
-                        popup=Popup(self._company_popup(comp), max_width=300),
-                        icon=Icon(color=self._marker_color(comp.get("score",0))),
+                        popup=Popup(
+                            f"<b>{comp['name']}</b><br/>{comp['description']}", max_width=300
+                        ),
+                        icon=Icon(color="blue", icon="industry"),
                     ).add_to(cluster)
-                    heat.append([lat, lon, comp.get("score",0)])
+                    heat.append([lat, lon, comp.get("score", 0)])
             if heat:
                 HeatMap(heat).add_to(m)
 
-        st_folium(m, use_container_width=True, height=600)
+        st_folium(m, use_container_width=True, height=400)
+
+    # ─────────── MODALS ─────────────────────────────────────────────────────
+    @staticmethod
+    def _show_login_modal() -> None:
+        with _open_modal("Logga in"):
+            st.text_input("E-post", value="", key="login_email")
+            st.text_input("Lösenord", value="", type="password", key="login_pw")
+            if st.button("Logga in", key="login_submit"):
+                st.session_state["show_login"] = False
 
     @staticmethod
-    def _render_insights():
-        recs = st.session_state.get("results", [])
-        if not recs:
-            st.info("No insights available")
-            return
-        df = pd.DataFrame(recs)
-        st.metric("Average Score", f"{df['score'].mean():.1f}%")
-        st.metric("Average Distance", f"{df['dist_km'].mean():.1f} km")
+    def _show_sponsor_modal(sponsor: Dict[str, Any]) -> None:
+        with _open_modal(sponsor["name"]):
+            st.write(sponsor["description"])
+            st.write(f"📧  {sponsor['contact']['email']}")
+            st.write(f"📞  {sponsor['contact']['phone']}")
+            st.text_area("Meddelande", value="", key="msg_to_sponsor")
+            if st.button("Skicka", key="msg_submit"):
+                st.success("Meddelande skickat!")
+                st.session_state["selected_sponsor"] = None
 
-    def render_main_page(self):
-        # Header
-        c1, c2, c3 = st.columns([1,2,1])
-        with c2:
-            st.image(Path("assets/logo.png"), width=180)
-            st.title("SponsorMatch AI")
 
-        # Sidebar
-        st.sidebar.header("🔍 Search Filters")
-        clubs = ["— choose —"] + self.clubs_df["name"].tolist()
-        choice = st.sidebar.selectbox("Club Name", clubs)
-        default_bucket = (
-            self.clubs_df.loc[self.clubs_df["name"]==choice, "size_bucket"].iat[0]
-            if choice!="— choose —" else "medium"
-        )
-        bucket = st.sidebar.selectbox("Club Size", ["small","medium","large"], index=["small","medium","large"].index(default_bucket))
-        industries = st.sidebar.multiselect("Industries", [])  # you can wire this up later
-        max_dist = st.sidebar.slider("Max distance (km)", 0, 100, 25)
-
-        if st.sidebar.button("Search") and choice!="— choose —":
-            self._run_search(choice, bucket, industries, max_dist)
-
-        # Tabs
-        t1, t2, t3, t4 = st.tabs(["🎯 Recommendations","📊 Analytics","🗺️ Map View","📈 Insights"])
-        with t1: self._render_recommendations()
-        with t2: self._render_analytics()
-        with t3: self._render_map()
-        with t4: self._render_insights()
-
-# ─── ENTRYPOINT ───────────────────────────────────────────────────────────────
-def main():
+def main() -> None:
     SponsorMatchUI().render_main_page()
+
 
 if __name__ == "__main__":
     main()
