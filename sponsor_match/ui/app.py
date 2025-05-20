@@ -14,9 +14,10 @@ _open_modal = getattr(st, "modal", st.expander)
 class SponsorMatchUI:
     def __init__(self) -> None:
         st.set_page_config(
-            page_title="SponsorMatch AI",
+            page_title="Golden Sugar Daddy Goal",
             page_icon="⚽",
             layout="wide",
+            initial_sidebar_state="collapsed",
         )
 
     def render_main_page(self) -> None:
@@ -30,6 +31,44 @@ class SponsorMatchUI:
             unsafe_allow_html=True,
         )
 
+        # ─── CUSTOM CSS FOR HORIZONTAL TABS ──────────────────────────────
+        st.markdown(
+            """
+            <style>
+              /* hide default hamburger menu & footer */
+              #MainMenu, footer { visibility: hidden; }
+
+              /* style the horizontal tabs container */
+              .stTabs [role="tablist"] {
+                background-color: #1e3a8a;
+                padding: 0.5rem 1rem;
+                border-radius: 0.5rem;
+                margin: 1rem 0;
+                display: inline-flex;
+              }
+              /* unselected tabs */
+              .stTabs [role="tab"] {
+                color: white;
+                padding: 0.5rem 1rem;
+                margin: 0 0.25rem;
+                border-radius: 0.25rem;
+              }
+              /* selected tab */
+              .stTabs [aria-selected="true"] {
+                background-color: #1e40af;
+                color: white;
+              }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # ─── SIDEBAR (login, title) ───────────────────────────────────────
+        with st.sidebar:
+            st.title("Golden Sugar Daddy Goal")
+            if st.button("🔑 Logga in", key="login_button"):
+                st.session_state["show_login"] = True
+
         # ─── HERO / HEADER ───────────────────────────────────────────────
         logo_path = Path(__file__).parent / "assets" / "logo.png"
         if logo_path.exists():
@@ -39,22 +78,12 @@ class SponsorMatchUI:
             unsafe_allow_html=True,
         )
 
-        # ─── LOGIN BUTTON ───────────────────────────────────────────────
-        if st.button("Logga in", key="login_button"):
-            st.session_state["show_login"] = True
-
-        # ─── NAV TABS ───────────────────────────────────────────────────
-        tabs = st.tabs(
-            ["🏠 Hem", "🎯 Hitta sponsorer", "📘 Min förening", "📊 Sponsorförslag"]
-        )
+        # ─── HORIZONTAL TABS NAV ─────────────────────────────────────────
+        tabs = st.tabs(["🏠 Hem", "🎯 Hitta sponsorer"])
         with tabs[0]:
             self._render_home()
         with tabs[1]:
             self._render_search()
-        with tabs[2]:
-            self._render_profile()
-        with tabs[3]:
-            self._render_suggestions()
 
         # ─── MODALS ─────────────────────────────────────────────────────
         if st.session_state.get("show_login"):
@@ -108,7 +137,6 @@ class SponsorMatchUI:
             if not results:
                 st.info("Välj filter och klicka på Sök")
             else:
-                # Results grid
                 cols = st.columns(2, gap="large")
                 for i, s in enumerate(results):
                     with cols[i % 2]:
@@ -132,7 +160,6 @@ class SponsorMatchUI:
                             """,
                             unsafe_allow_html=True,
                         )
-                # ─── Now call the restored map ─────────────────────────
                 st.markdown("### Kartvy", unsafe_allow_html=True)
                 self._render_map()
 
@@ -221,7 +248,7 @@ class SponsorMatchUI:
             },
         ]
 
-    # ─────────── RESTORED MAP METHOD ──────────────────────────────────────
+    # ─────────── MAP METHOD ──────────────────────────────────────────────────
     def _render_map(self) -> None:
         club = st.session_state.get(
             "club_data", {"lat": 57.7089, "lon": 11.9746}
