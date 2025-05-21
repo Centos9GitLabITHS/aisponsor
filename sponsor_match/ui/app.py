@@ -146,45 +146,267 @@ class SponsorMatchUI:
             "<h2 style='font-size:2rem;font-weight:600;color:#1e40af;'>Sök sponsorer</h2>",
             unsafe_allow_html=True,
         )
-        f1, f2 = st.columns(2, gap="large")
-        with f1:
-            city = st.text_input("Ort", value="", key="filter_city")
-            radius = st.slider("Radie (km)", 0, 100, 25, key="filter_radius")
-            industry = st.selectbox("Bransch", ["Bank", "Energi", "IT"], key="filter_industry")
-            size = st.selectbox("Storlek", ["Liten", "Medel", "Stor"], key="filter_size")
-            if st.button("Sök", key="do_search"):
-                st.session_state["results"] = self._get_dummy_sponsors(city, radius, industry, size)
 
-        with f2:
-            results = st.session_state.get("results", [])
-            if not results:
-                st.info("Välj filter och klicka på Sök")
-            else:
-                cols = st.columns(2, gap="large")
-                for i, s in enumerate(results):
-                    with cols[i % 2]:
-                        st.markdown(
-                            f"""
-                            <div style="background:white;padding:1.5rem;border-radius:8px;
-                                        box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-                              <div style="font-size:1.125rem;font-weight:700;color:#1e40af;">
-                                {s['name']}
-                              </div>
-                              <div style="font-size:0.875rem;color:#4b5563;">
-                                {s['description']}
-                              </div>
-                              <div style="margin-top:1rem;">
-                                <button style="background:#2563eb;color:white;padding:0.5rem 1rem;
-                                               border:none;border-radius:4px;">
-                                  📧 Kontakta
-                                </button>
-                              </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-                st.markdown("### Kartvy", unsafe_allow_html=True)
-                self._render_map()
+        # Database connection to fetch associations
+        from sponsor_match.core.db import get_engine
+        from sqlalchemy import text
+        import pandas as pd
+
+        engine = get_engine()
+
+        # Step 1: Association Search with Autocomplete
+        st.markdown("<h3>Steg 1: Hitta din förening</h3>", unsafe_allow_html=True)
+
+        # Get all associations from database
+        with engine.connect() as conn:
+            associations_df = pd.read_sql("SELECT id, name, member_count, address, lat, lon, size_bucket FROM clubs",
+                                          conn)
+
+        # Create association autocomplete
+        association_input = st.text_input("Ange din förenings namn", key="association_name")
+
+        # Filter associations based on input
+        filtered_associations = []
+        if association_input:
+            filtered_associations = associations_df[associations_df['name'].str.contains(association_input, case=False)]
+
+        # Display matching associations
+        selected_association = None
+        new_association = False
+
+        if not filtered_associations.empty:
+            association_options = filtered_associations['name'].tolist()
+            selected_assoc_name = st.selectbox("Välj din förening från listan", options=[""] + association_options,
+                                               key="selected_assoc")
+
+            if selected_assoc_name:
+                selected_association = filtered_associations[filtered_associations['name'] == selected_assoc_name].iloc[
+                    0]
+
+                # Display association details
+                st.markdown(f"""
+                <div style="background:#eff6ff;padding:1rem;border-radius:8px;margin-bottom:1rem;">
+                    <h4 style="margin:0;color:#1e40af;">Förening: {selected_association['name']}</h4>
+                    <p style="margin:0;">Adress: {selected_association['address']}</p>
+                    <p style="margin:0;">Storlek: {selected_association['size_bucket'].capitalize()}</p>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            if association_input:
+                st.warning("Din förening hittades inte. Vill du registrera den?")
+                if st.button("Ja, registrera min förening"):
+                    new_association = True
+
+        # Step 2: New Association Registration (if needed)
+        if new_association:
+            st.markdown("<h3>Steg 2: Registrera din förening</h3>", unsafe_allow_html=True)
+            with st.form("new_association_form"):
+                assoc_name = st.text_input("Föreningens namn", value=association_input)
+                assoc_address = st.text_input("Fullständig adress", help="Gatuadress, postnummer och ort")
+                assoc_members = st.number_input("Antal medlemmar", min_value=1, value=100)
+
+                # Determine size bucket based on members
+                size_bucket = "small"
+                if assoc_members > 500:
+                    size_bucket = "large"
+                elif assoc_members > 100:
+                    size_bucket = "medium"
+
+                st.info(f"Din förening klassificeras som {size_bucket.upper()} baserat på medlemsantalet.")
+
+                submit = st.form_submit_button("Registrera")
+
+                if submit:
+                    # Geocode the address
+                    from geopy.geocoders import Nominatim
+                    from geopy.extra.rate_limiter import RateLimiter
+
+                    geolocator = Nominatim(user_agent="sponsor_match_geo")
+                    geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
+
+                    with st.spinner('Hämtar din förenings plats...'):
+                        location = geocode(assoc_address)
+
+                    if location:
+                        lat, lon = location.latitude, location.longitude
+
+                        # Insert new association into database
+                        with engine.connect() as conn:
+                            conn.execute(text("""
+                            INSERT INTO clubs (name, address, member_count, lat, lon, size_bucket)
+                            VALUES (:name, :address, :members, :lat, :lon, :size_bucket)
+                            """), {
+                                "name": assoc_name,
+                                "address": assoc_address,
+                                "members": assoc_members,
+                                "lat": lat,
+                                "lon": lon,
+                                "size_bucket": size_bucket
+                            })
+                            conn.commit()
+
+                        # Get the newly created association
+                        with engine.connect() as conn:
+                            result = conn.execute(text("""
+                            SELECT id, name, member_count, address, lat, lon, size_bucket 
+                            FROM clubs WHERE name = :name AND address = :address
+                            """), {"name": assoc_name, "address": assoc_address})
+                            row = result.fetchone()
+                            if row:
+                                # Convert row to dict with proper keys
+                                keys = ["id", "name", "member_count", "address", "lat", "lon", "size_bucket"]
+                                selected_association = {keys[i]: value for i, value in enumerate(row)}
+
+                        st.success("Förening registrerad!")
+                    else:
+                        st.error("Kunde inte hitta adressen. Kontrollera och försök igen.")
+
+        # Step 3: Search Parameters
+        if selected_association is not None:
+            st.markdown("<h3>Steg 3: Sökparametrar</h3>", unsafe_allow_html=True)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                radius = st.slider("Sökradie (km)", 1, 50, 10, key="search_radius")
+
+            # Store association in session state
+            st.session_state["current_association"] = selected_association
+
+            # Search button
+            if st.button("Sök sponsorer", key="search_sponsors_btn"):
+                # Search for companies
+                with st.spinner('Söker efter lämpliga sponsorer...'):
+                    with engine.connect() as conn:
+                        # Get companies matching size and within radius
+                        sql = text("""
+                        SELECT c.*, 
+                               SQRT(POW(111.2 * (c.lat - :lat), 2) + POW(111.2 * (:lon - c.lon) * COS(c.lat / 57.3), 2)) AS distance
+                        FROM companies c
+                        WHERE c.size_bucket = :size_bucket
+                        HAVING distance <= :radius
+                        ORDER BY distance ASC
+                        """)
+
+                        companies = pd.read_sql(sql, conn, params={
+                            "lat": selected_association["lat"],
+                            "lon": selected_association["lon"],
+                            "size_bucket": selected_association["size_bucket"],
+                            "radius": radius
+                        })
+
+                        # Save results to session state
+                        if not companies.empty:
+                            st.session_state["search_results"] = companies.to_dict('records')
+                            st.session_state["current_page"] = 0
+                        else:
+                            st.warning("Inga matchande företag hittades inom den angivna radien.")
+                            st.session_state["search_results"] = []
+
+        # Step 4: Display Results
+        if "search_results" in st.session_state and st.session_state["search_results"]:
+            st.markdown("<h3>Steg 4: Sökresultat</h3>", unsafe_allow_html=True)
+
+            # Pagination
+            results = st.session_state["search_results"]
+            page_size = 10
+            total_pages = (len(results) + page_size - 1) // page_size
+
+            # Display page navigation
+            col1, col2, col3 = st.columns([2, 3, 2])
+
+            with col1:
+                if st.session_state["current_page"] > 0:
+                    if st.button("◀ Föregående", key="prev_page"):
+                        st.session_state["current_page"] -= 1
+
+            with col2:
+                st.write(f"Sida {st.session_state['current_page'] + 1} av {total_pages}")
+
+            with col3:
+                if st.session_state["current_page"] < total_pages - 1:
+                    if st.button("Nästa ▶", key="next_page"):
+                        st.session_state["current_page"] += 1
+
+            # Get current page results
+            start_idx = st.session_state["current_page"] * page_size
+            end_idx = min(start_idx + page_size, len(results))
+            page_results = results[start_idx:end_idx]
+
+            # Display results and map
+            col1, col2 = st.columns([3, 5])
+
+            with col1:
+                for company in page_results:
+                    # Create clickable result card
+                    is_selected = st.session_state.get("selected_company_id") == company["id"]
+                    card_style = f"background:{'#e6f2ff' if is_selected else 'white'};padding:1rem;border-radius:8px;margin-bottom:0.5rem;cursor:pointer;border:{'2px solid #2563eb' if is_selected else '1px solid #e5e7eb'};"
+
+                    html = f"""
+                    <div style="{card_style}" onclick="this.style.border='2px solid #2563eb';window.parent.postMessage({{company_id: {company['id']}}}, '*');">
+                        <div style="font-weight:600;color:#1e40af;">{company['name']}</div>
+                        <div style="font-size:0.875rem;color:#4b5563;">Avstånd: {company['distance']:.1f} km</div>
+                        <div style="font-size:0.875rem;color:#4b5563;">Storlek: {company['size_bucket'].capitalize()}</div>
+                    </div>
+                    """
+
+                    st.markdown(html, unsafe_allow_html=True)
+
+                    # JavaScript to handle clicks
+                    st.markdown("""
+                    <script>
+                    window.addEventListener('message', function(e) {
+                        if (e.data.company_id) {
+                            // Use Streamlit's setComponentValue when available
+                            if (window.streamlitTurbo) {
+                                window.streamlitTurbo.setComponentValue({name: 'selected_company_id', value: e.data.company_id});
+                            }
+                        }
+                    });
+                    </script>
+                    """, unsafe_allow_html=True)
+
+            with col2:
+                # Render map with association and companies
+                self._render_results_map(st.session_state["current_association"], page_results)
+
+    # Add new method to render results map
+    @staticmethod
+    def _render_results_map(association, companies):
+        import folium
+        from streamlit_folium import st_folium
+
+        # Create map centered on association
+        m = folium.Map(location=[association["lat"], association["lon"]], zoom_start=12)
+
+        # Add association marker
+        folium.Marker(
+            location=[association["lat"], association["lon"]],
+            popup=f"<b>{association['name']}</b><br>({association['size_bucket'].capitalize()})",
+            icon=folium.Icon(color="red", icon="home"),
+        ).add_to(m)
+
+        # Add markers for each company
+        for company in companies:
+            folium.Marker(
+                location=[company["lat"], company["lon"]],
+                popup=f"<b>{company['name']}</b><br>Avstånd: {company['distance']:.1f} km<br>Storlek: {company['size_bucket'].capitalize()}",
+                icon=folium.Icon(color="blue", icon="briefcase"),
+            ).add_to(m)
+
+        # Create a line from association to selected company if any
+        if "selected_company_id" in st.session_state:
+            selected = next((c for c in companies if c["id"] == st.session_state["selected_company_id"]), None)
+            if selected:
+                folium.PolyLine(
+                    locations=[[association["lat"], association["lon"]], [selected["lat"], selected["lon"]]],
+                    color="blue",
+                    weight=2,
+                    opacity=0.7,
+                    dash_array="5"
+                ).add_to(m)
+
+        # Display the map
+        st_folium(m, height=500)
 
     # ─────────── SETTINGS PAGE ───────────────────────────────────────────────
     @staticmethod
