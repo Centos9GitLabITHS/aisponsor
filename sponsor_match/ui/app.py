@@ -20,7 +20,7 @@ class SponsorMatchUI:
         )
 
     def render_main_page(self) -> None:
-        # ─── ENHANCED CSS WITH FIXES FOR IDENTIFIED ISSUES ───────────────────────
+        # Enhanced CSS with fixes for identified issues
         st.markdown(
             """
             <style>
@@ -29,12 +29,12 @@ class SponsorMatchUI:
                     background: linear-gradient(to bottom, #f0f9ff, #e0f2fe);
                 }
 
-                /* Main content area with white background and proper centering */
+                /* Main content area with white background */
                 .main-content {
                     background: white;
                     border-radius: 12px;
                     padding: 2rem;
-                    max-width: 1000px;
+                    max-width: 1200px;
                     margin: 1rem auto;
                     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
                 }
@@ -49,55 +49,40 @@ class SponsorMatchUI:
                 /* Body text improvements */
                 p, label, div:not(.main-content) {
                     color: #334155 !important;
-                    font-size: 16px !important;
                 }
 
-                /* IMPROVED NAVIGATION BAR - Moved to top, wider, and more prominent */
-                .navigation-container {
-                    display: flex;
-                    justify-content: center;
-                    width: 100%;
-                    margin: 0.5rem 0 2rem 0;
-                    padding: 0.5rem 0;
-                    background: rgba(255, 255, 255, 0.7);
-                    backdrop-filter: blur(10px);
-                    position: sticky;
-                    top: 0;
-                    z-index: 100;
-                }
-
-                .nav-tabs {
-                    display: flex;
-                    background: #1e3a8a;
+                /* Style the native tabs better */
+                .stTabs [data-baseweb="tab-list"] {
+                    gap: 8px;
+                    background-color: #1e3a8a !important;
                     border-radius: 8px;
                     padding: 0.5rem;
-                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-                    margin: 0 auto;
-                    width: 80%;
                     max-width: 800px;
-                    justify-content: center;
+                    margin: 0 auto 1.5rem auto;
                 }
 
-                .nav-tab {
-                    padding: 0.75rem 1.5rem;
-                    margin: 0 0.25rem;
+                .stTabs [data-baseweb="tab"] {
+                    height: auto;
+                    padding: 0.5rem 1.5rem;
+                    color: white !important;
                     border-radius: 6px;
-                    color: white;
-                    font-weight: 500;
-                    cursor: pointer;
-                    transition: all 0.2s;
+                    margin: 0;
                 }
 
-                .nav-tab.active {
-                    background: #2563eb;
-                    color: white;
+                .stTabs [aria-selected="true"] {
+                    background-color: #2563eb !important;
+                    border-radius: 6px;
                 }
 
-                .nav-tab:hover:not(.active) {
-                    background: rgba(255, 255, 255, 0.2);
+                /* Make text inputs pretty */
+                [data-testid="stTextInput"] > div > div > input {
+                    background-color: white;
+                    color: #1e293b;
+                    border: 1px solid #cbd5e1;
+                    max-width: 500px;
                 }
 
-                /* Form elements styling - clearer boundaries and better contrast */
+                /* Form elements styling */
                 input[type="text"], input[type="number"], input[type="email"], 
                 textarea, select, .stSelectbox > div > div {
                     background: white !important;
@@ -109,32 +94,25 @@ class SponsorMatchUI:
                     box-shadow: none !important;
                 }
 
-                /* Focused input styling */
-                input:focus, textarea:focus, select:focus {
-                    border-color: #3b82f6 !important;
-                    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
-                }
-
-                /* Button styling - more visible */
+                /* Button styling */
                 .stButton > button {
                     background-color: #1e40af !important;
                     color: white !important;
                     font-weight: 500 !important;
-                    padding: 0.75rem 1.5rem !important;
+                    padding: 0.625rem 1.5rem !important;
                     border-radius: 6px !important;
                     border: none !important;
                     transition: all 0.2s !important;
                     text-transform: none !important;
-                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
                 }
 
                 .stButton > button:hover {
                     background-color: #1e3a8a !important;
                     transform: translateY(-1px);
-                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15) !important;
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
                 }
 
-                /* Fixed slider width with better color */
+                /* Fixed slider width */
                 .stSlider {
                     max-width: 400px !important;
                 }
@@ -143,16 +121,11 @@ class SponsorMatchUI:
                     background-color: #1e40af !important;
                 }
 
-                /* Reposition sidebar with improved contrast */
+                /* Sidebar styling */
                 [data-testid="stSidebar"] {
                     background-color: #1e3a8a !important;
                     color: white !important;
                     padding-top: 2rem !important;
-                }
-
-                [data-testid="stSidebar"] button {
-                    background-color: white !important;
-                    color: #1e3a8a !important;
                 }
 
                 [data-testid="stSidebar"] h1, 
@@ -161,9 +134,14 @@ class SponsorMatchUI:
                     color: white !important;
                 }
 
-                /* Fix for checkbox styling - better visibility */
+                [data-testid="stSidebar"] button {
+                    background-color: white !important;
+                    color: #1e3a8a !important;
+                }
+
+                /* Checkbox styling */
                 .stCheckbox > label {
-                    color: #1e293b !important;
+                    color: #334155 !important;
                     font-weight: 500 !important;
                 }
 
@@ -171,7 +149,7 @@ class SponsorMatchUI:
                     border-color: #3b82f6 !important;
                 }
 
-                /* Make sure map is visible - added height and border */
+                /* Map styling - ensure visibility */
                 .folium-map {
                     width: 100% !important;
                     min-height: 450px !important;
@@ -181,20 +159,7 @@ class SponsorMatchUI:
                     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
                 }
 
-                /* Helper classes */
-                .mb-4 {
-                    margin-bottom: 1rem !important;
-                }
-
-                .mt-4 {
-                    margin-top: 1rem !important;
-                }
-
-                .text-center {
-                    text-align: center !important;
-                }
-
-                /* Card styling for content sections */
+                /* Content card styling */
                 .content-card {
                     background: white;
                     border-radius: 8px;
@@ -203,96 +168,53 @@ class SponsorMatchUI:
                     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
                 }
 
+                /* Helper classes */
+                .mb-4 { margin-bottom: 1rem !important; }
+                .mt-4 { margin-top: 1rem !important; }
+                .text-center { text-align: center !important; }
+
                 /* Hide default hamburger & footer */
                 #MainMenu, footer { visibility: hidden; }
-
-                /* Fix for sidebar toggle button */
-                button[kind="header"] {
-                    background-color: transparent !important;
-                    color: #1e293b !important;
-                }
-
-                /* Improve select dropdown visibility */
-                .stSelectbox > div > div[data-baseweb="select"] > div {
-                    background-color: white !important;
-                    color: #1e293b !important;
-                }
             </style>
             """,
-            unsafe_allow_html=True,
+            unsafe_allow_html=True
         )
 
-        # ─── CUSTOM NAVIGATION (REPLACES TABS) ────────────────────────────────────
-        # This creates a more styled, centered navigation at the top
+        # Center the title
+        st.markdown("<h1 style='text-align:center;color:#1e3a8a;margin-bottom:1.5rem;'>Golden Sugar Daddy Goal</h1>",
+                    unsafe_allow_html=True)
 
-        # Get the current tab from session state or default to Home
-        if "current_tab" not in st.session_state:
-            st.session_state["current_tab"] = "home"
+        # Use Streamlit's native tabs - THIS IS THE ONLY NAVIGATION SYSTEM WE'LL USE
+        tab1, tab2, tab3, tab4 = st.tabs(["🏠 Hem", "🎯 Hitta sponsorer", "⚙️ Inställningar", "👤 Min förening"])
 
-        # Create centered heading
-        st.markdown("<h1 class='text-center'>Golden Sugar Daddy Goal</h1>", unsafe_allow_html=True)
-
-        nav_html = """
-        <div class="navigation-container">
-            <div class="nav-tabs">
-                <div class="nav-tab {home_active}" onclick="setTab('home')">🏠 Hem</div>
-                <div class="nav-tab {search_active}" onclick="setTab('search')">🎯 Hitta sponsorer</div>
-                <div class="nav-tab {settings_active}" onclick="setTab('settings')">⚙️ Inställningar</div>
-                <div class="nav-tab {profile_active}" onclick="setTab('profile')">👤 Min förening</div>
-            </div>
-        </div>
-
-        <script>
-        function setTab(tab) {
-            // Use Streamlit's setState mechanism
-            window.parent.postMessage({{
-                type: "streamlit:setComponentValue",
-                value: tab,
-                dataType: "str",
-                componentId: "nav_tab_state"
-            }}, "*");
-        }
-        </script>
-        """.format(
-            home_active="active" if st.session_state["current_tab"] == "home" else "",
-            search_active="active" if st.session_state["current_tab"] == "search" else "",
-            settings_active="active" if st.session_state["current_tab"] == "settings" else "",
-            profile_active="active" if st.session_state["current_tab"] == "profile" else ""
-        )
-
-        # Display the navigation
-        st.markdown(nav_html, unsafe_allow_html=True)
-
-        # This enables the JavaScript to communicate tab changes back to Streamlit
-        nav_tab = st.text_input("", key="nav_tab_state", label_visibility="collapsed")
-        if nav_tab and nav_tab != st.session_state["current_tab"]:
-            st.session_state["current_tab"] = nav_tab
-            st.experimental_rerun()
-
-        # ─── MAIN CONTENT AREA ─────────────────────────────────────────────────────
-        # Wrap main content in a white card with proper width
-        st.markdown('<div class="main-content">', unsafe_allow_html=True)
-
-        # Show the appropriate tab content based on state
-        if st.session_state["current_tab"] == "home":
+        # Main content wrapper for each tab
+        with tab1:
+            st.markdown('<div class="main-content">', unsafe_allow_html=True)
             self._render_home()
-        elif st.session_state["current_tab"] == "search":
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with tab2:
+            st.markdown('<div class="main-content">', unsafe_allow_html=True)
             self._render_search()
-        elif st.session_state["current_tab"] == "settings":
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with tab3:
+            st.markdown('<div class="main-content">', unsafe_allow_html=True)
             self._render_settings()
-        elif st.session_state["current_tab"] == "profile":
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with tab4:
+            st.markdown('<div class="main-content">', unsafe_allow_html=True)
             self._render_profile()
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        # Close the main content div
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # ─── SIDEBAR ────────────────────────────────────────────────────────────
+        # Sidebar
         with st.sidebar:
             st.title("Golden Sugar Daddy Goal")
             if st.button("🔑 Logga in", key="login_button"):
                 st.session_state["show_login"] = True
 
-        # ─── MODALS ────────────────────────────────────────────────────────────
+        # Modals
         if st.session_state.get("show_login"):
             self._show_login_modal()
         if st.session_state.get("selected_sponsor"):
@@ -301,39 +223,52 @@ class SponsorMatchUI:
     # ─────────── HOME ────────────────────────────────────────────────────────
     @staticmethod
     def _render_home() -> None:
-        # Welcome message with improved styling
-        st.markdown(
-            """
-            <h2>Välkommen till Golden Sugar Daddy Goal</h2>
-            <p style='font-size:1.1rem;margin-bottom:2rem;'>
-                Hitta de perfekta sponsorerna för din förening med hjälp av vår
-                avancerade matchmaking-plattform.
-            </p>
+        # Clean and professional layout
+        col1, col2 = st.columns([1, 1])
 
-            <div class="content-card" style="text-align:center;padding:2rem;">
-                <img src="https://via.placeholder.com/150x150" alt="Logo" style="border-radius:50%;margin-bottom:1.5rem;" />
-                <h3>Hitta sponsorer på ett smartare sätt</h3>
-                <p>Vår plattform matchar din förening med sponsorer som har samma värderingar och mål.</p>
-                <div style="margin-top:2rem;">
-                    <button onclick="setTab('search')" style="background:#1e40af;color:white;padding:0.75rem 1.5rem;border:none;border-radius:6px;font-weight:500;cursor:pointer;">
-                        Kom igång nu
-                    </button>
+        with col1:
+            st.markdown(
+                """
+                <h2>Välkommen till Golden Sugar Daddy Goal</h2>
+                <p style='font-size:1.1rem;line-height:1.6;margin-bottom:1.5rem;'>
+                    Hitta de perfekta sponsorerna för din förening med hjälp av vår
+                    avancerade matchmaking-plattform.
+                </p>
+
+                <div style='margin-top:2rem;'>
+                    <h3>Hur det fungerar</h3>
+                    <div style='display:flex;align-items:center;margin-bottom:1rem;'>
+                        <div style='background:#1e40af;color:white;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:12px;'>1</div>
+                        <p>Registrera din förening eller hitta den i vår databas</p>
+                    </div>
+                    <div style='display:flex;align-items:center;margin-bottom:1rem;'>
+                        <div style='background:#1e40af;color:white;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:12px;'>2</div>
+                        <p>Ange dina sponsringsbehov och preferenser</p>
+                    </div>
+                    <div style='display:flex;align-items:center;margin-bottom:1rem;'>
+                        <div style='background:#1e40af;color:white;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:12px;'>3</div>
+                        <p>Få matchningar med företag som passar din profil</p>
+                    </div>
                 </div>
-            </div>
+                """,
+                unsafe_allow_html=True
+            )
 
-            <script>
-            function setTab(tab) {
-                window.parent.postMessage({
-                    type: "streamlit:setComponentValue",
-                    value: tab,
-                    dataType: "str",
-                    componentId: "nav_tab_state"
-                }, "*");
-            }
-            </script>
-            """,
-            unsafe_allow_html=True
-        )
+        with col2:
+            st.markdown(
+                """
+                <div style='background:#f0f9ff;border-radius:12px;padding:2rem;text-align:center;height:100%;'>
+                    <img src="https://via.placeholder.com/150x150" alt="Logo" style="border-radius:50%;margin-bottom:1.5rem;width:150px;height:150px;" />
+                    <h3>Hitta sponsorer på ett smartare sätt</h3>
+                    <p style='margin-bottom:2rem;'>Vår plattform matchar din förening med sponsorer som har samma värderingar och mål.</p>
+                    <a href="#" onclick="document.querySelector('[data-baseweb=tab]').nextElementSibling.click(); return false;" 
+                       style='background:#1e40af;color:white;padding:0.75rem 1.5rem;border-radius:6px;text-decoration:none;display:inline-block;font-weight:500;'>
+                        Kom igång nu
+                    </a>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
     # ─────────── SEARCH (with MAP) ─────────────────────────────────────────
     def _render_search(self) -> None:
@@ -558,35 +493,14 @@ class SponsorMatchUI:
                     # Show result cards
                     for company in page_results:
                         is_selected = st.session_state.get("selected_company_id") == company["id"]
-                        st.markdown(f"""
-                        <div style="background:{'#e6f2ff' if is_selected else 'white'};padding:1rem;border-radius:8px;
-                                    margin-bottom:0.5rem;border:{'2px solid #2563eb' if is_selected else '1px solid #e5e7eb'};
-                                    cursor:pointer;" onclick="selectCompany({company['id']})">
-                            <div style="font-weight:600;color:#1e40af;">{company['name']}</div>
-                            <div style="font-size:0.875rem;color:#4b5563;">Avstånd: {company['distance']:.1f} km</div>
-                            <div style="font-size:0.875rem;color:#4b5563;">Storlek: {company['size_bucket'].capitalize()}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
 
-                    # JavaScript to handle company selection
-                    st.markdown("""
-                    <script>
-                    function selectCompany(id) {
-                        window.parent.postMessage({
-                            type: "streamlit:setComponentValue",
-                            value: id,
-                            dataType: "int",
-                            componentId: "selected_company_id"
-                        }, "*");
-                    }
-                    </script>
-                    """, unsafe_allow_html=True)
-
-                    # Hidden input to capture selected company
-                    selected_id = st.text_input("", key="selected_company_id", label_visibility="collapsed")
-                    if selected_id and selected_id != st.session_state.get("selected_company_id"):
-                        st.session_state["selected_company_id"] = int(selected_id)
-                        st.experimental_rerun()
+                        if st.button(f"{company['name']} - {company['distance']:.1f} km",
+                                     key=f"company_{company['id']}",
+                                     help=f"Storlek: {company['size_bucket'].capitalize()}",
+                                     use_container_width=True):
+                            st.session_state["selected_company_id"] = company["id"]
+                            st.session_state["selected_sponsor"] = company
+                            st.experimental_rerun()
 
             else:
                 # Show default map centered on Sweden
@@ -657,7 +571,6 @@ class SponsorMatchUI:
                         pass
 
             # Display the map
-            # FIX: Simplified st_folium call to avoid unexpected arguments
             st_folium(m, height=500)
         except Exception as e:
             st.error(f"Kunde inte visa kartan: {str(e)}")
