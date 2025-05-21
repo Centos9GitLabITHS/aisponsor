@@ -1,26 +1,72 @@
-# Cache files
-.geo_cache.sqlite3
-geocode_cache.db
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
 
-# Virtual environments
-.venv/
-.venv312/
+# C extensions
+*.so
 
-# Output directories
-utils_output/
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+*.egg
 
-# Temporary and system files
-.DS_Store
-*.log
-*.tgz
-*.gz
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
 
-# IDE specific files
-.idea/
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+
+# MyPy / Pyre
+.mypy_cache/
+.dmypy.json
+.pyre/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDEs and editors
 .vscode/
 .idea/
-**/__pycache__/
-*.pyc
+*.sublime-project
+*.sublime-workspace
+*.swp
+
+# Virtual environments
+env/
+venv/
+ENV/
+.venv/
+
+# Env files and secrets
+.env
+.env.*
+
+# Streamlit
+.streamlit/
+.streamlitignore
+
+# Caches and data
+cache/
+data/*.csv
+*.db
+*.sqlite3
+.geo_cache.sqlite3
+geocode_cache.db
+
+# Model artifacts
+models/*.pkl
+
+# Logs
+*.log

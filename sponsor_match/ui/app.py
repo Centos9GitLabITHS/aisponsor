@@ -1,45 +1,83 @@
+#!/usr/bin/env python3
 """
-Main Streamlit application entry point for SponsorMatch.
-Handles app initialization and page routing.
+sponsor_match/ui/app.py
+
+Streamlit UI for SponsorMatch AI.
 """
+
 import streamlit as st
 from pathlib import Path
+import logging
 
-from sponsor_match.ui.pages import home, search, profile
-from sponsor_match.ui.components.sidebar import render_sidebar
-from sponsor_match.ui.services.data_service import load_initial_data
-from sponsor_match.ui.utils.styles import apply_global_styles
+from sponsor_match.core.config import (
+    APP_TITLE,
+    LOGO_PATH,
+    STREAMLIT_PAGE_ICON,
+)
+from sponsor_match.core.db import get_engine
+from sponsor_match.services.service import search, recommend
 
-def main():
-    """Initialize and render the SponsorMatch application."""
-    # Configure page
+def set_page_config():
     st.set_page_config(
-        page_title="SponsorMatch AI",
-        page_icon="🏆",
+        page_title=APP_TITLE,
+        page_icon=STREAMLIT_PAGE_ICON,
         layout="wide",
-        initial_sidebar_state="collapsed",
+        initial_sidebar_state="expanded",
     )
 
-    # Apply global styles
-    apply_global_styles()
+def main():
+    # 1) Configure the page
+    set_page_config()
 
-    # Initialize data
-    load_initial_data()
+    # 2) Header with logo
+    logo_file = Path(LOGO_PATH)
+    if logo_file.exists():
+        try:
+            st.image(str(logo_file), width=120)
+        except (FileNotFoundError, OSError) as e:
+            logging.warning(f"Could not load logo image at {logo_file}: {e}")
+    else:
+        logging.info(f"Logo file not found at {logo_file}, skipping image.")
 
-    # Render sidebar
-    render_sidebar()
+    # 3) Title
+    st.title(APP_TITLE)
 
-    # Page routing based on tabs
-    tabs = st.tabs(["🏠 Hem", "🎯 Hitta sponsorer", "👤 Min profil"])
+    # 4) Prepare DB engine
+    engine = get_engine()
 
-    with tabs[0]:
-        home.render_home_page()
+    # 5) Sidebar controls
+    st.sidebar.header("Options")
+    mode = st.sidebar.radio("Mode", ["Search", "Recommend"])
 
-    with tabs[1]:
-        search.render_search_page()
+    if mode == "Search":
+        query = st.sidebar.text_input("Search clubs or sponsors")
+        if st.sidebar.button("Go"):
+            if not query:
+                st.sidebar.warning("Please enter a search term.")
+            else:
+                results = search(engine, query)
+                if not results.empty:
+                    st.write(f"Found {len(results)} results for “{query}”:")
+                    st.dataframe(results)
+                else:
+                    st.warning(f"No results found for “{query}.”")
 
-    with tabs[2]:
-        profile.render_profile_page()
-
-if __name__ == "__main__":
-    main()
+    else:  # Recommend mode
+        club_name = st.sidebar.text_input("Club name")
+        top_n = st.sidebar.number_input(
+            "How many sponsors?", min_value=1, max_value=50, value=10
+        )
+        if st.sidebar.button("Recommend"):
+            if not club_name:
+                st.sidebar.warning("Please enter a club name.")
+            else:
+                recs = recommend(engine, club_name, top_n)
+                if not recs.empty:
+                    st.write(f"Top {len(recs)} recommendations for “{club_name}”:")
+                    st.dataframe(recs)
+                    if {"latitude", "longitude"}.issubset(recs.columns):
+                        st.map(
+                            recs.rename(columns={"latitude": "lat", "longitude": "lon"})
+                        )
+                else:
+                    st.warning(f"No sponsor recommendations for “{club_name}.”")
