@@ -11,13 +11,14 @@ This debugger is specifically designed for your app's architecture where entitie
 are dataclasses, not SQLAlchemy ORM models.
 """
 
-import sys
-import logging
 import json
-from pathlib import Path
-from datetime import datetime
-import pandas as pd
+import logging
+import sys
 import traceback
+from datetime import datetime
+from pathlib import Path
+
+from scipy.special._precompute.cosine_cdf import p
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -313,7 +314,7 @@ class SearchDebugger:
             logger.info("=" * 60)
 
             try:
-                from sponsor_match.ui.app_v2 import SponsorMatchUI
+                from sponsor_match.ui.app import SponsorMatchUI
 
                 # Create UI instance
                 ui = SponsorMatchUI()
@@ -387,7 +388,7 @@ class SearchDebugger:
             logger.info("4. Look for any try/catch blocks that might be hiding errors")
             logger.info("5. Add logging to the exact point where search is triggered in the UI")
 
-    def main():
+    def main(self):
         """Run the complete debugging process"""
         print("SponsorMatchAI Search Issue Debugger")
         print("=" * 40)

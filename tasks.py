@@ -28,4 +28,4 @@ def train_classifier(c):
 @task
 def app(c):
     """Launch the Streamlit application."""
-    c.run("streamlit run sponsor_match/ui/app_v2.py", pty=True)
+    c.run("streamlit run sponsor_match/ui/app.py", pty=True)

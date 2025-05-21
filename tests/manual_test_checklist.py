@@ -121,7 +121,7 @@ def test_project_structure():
         "sponsor_match/core/db.py",
         "sponsor_match/models/entities.py",
         "sponsor_match/services/service_v2.py",
-        "sponsor_match/ui/app_v2.py",
+        "sponsor_match/ui/app.py",
         "sponsor_match/data/ingest_associations.py",
     ]
 
@@ -405,7 +405,7 @@ def test_streamlit_interface():
 
     try:
         print_instruction("Importing Streamlit UI...")
-        from sponsor_match.ui.app_v2 import SponsorMatchUI
+        from sponsor_match.ui.app import SponsorMatchUI
         print_success("SponsorMatchUI imported successfully")
 
         print_instruction("\nCreating UI instance...")
@@ -427,7 +427,7 @@ def test_streamlit_interface():
 
         print("\nTo fully test the interface:")
         print("1. Open a new terminal")
-        print("2. Run: streamlit run sponsor_match/ui/app_v2.py")
+        print("2. Run: streamlit run sponsor_match/ui/app.py")
         print("3. Check for any error messages")
         print("4. Try using the filters and search functionality")
 

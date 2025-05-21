@@ -6,7 +6,7 @@ from folium import Map, Marker, Popup, Icon
 from folium.plugins import MarkerCluster, HeatMap
 from streamlit_folium import st_folium
 
-# Fallback if st.modal isn't available
+# Fallback if st.modal isn’t available
 _open_modal = getattr(st, "modal", st.expander)
 
 
@@ -94,15 +94,11 @@ class SponsorMatchUI:
         )
 
         # ─── HORIZONTAL TABS NAV ───────────────────────────────────────────────
-        tabs = st.tabs(["🏠 Hem", "🎯 Hitta sponsorer", "⚙️ Inställningar", "👤 Min sida"])
+        tabs = st.tabs(["🏠 Hem", "🎯 Hitta sponsorer"])
         with tabs[0]:
             self._render_home()
         with tabs[1]:
             self._render_search()
-        with tabs[2]:
-            self._render_settings()
-        with tabs[3]:
-            self._render_profile()
 
         # ─── MODALS ────────────────────────────────────────────────────────────
         if st.session_state.get("show_login"):
@@ -113,32 +109,28 @@ class SponsorMatchUI:
     # ─────────── HOME ────────────────────────────────────────────────────────
     @staticmethod
     def _render_home() -> None:
-        # Welcome message or introduction instead of cards
-        st.markdown(
-            """
-            <h2 style='font-size:2rem;font-weight:600;color:#1e40af;'>Välkommen till Golden Sugar Daddy Goal</h2>
-            <p style='font-size:1.2rem;color:#4b5563;'>
-                Hitta de perfekta sponsorerna för din förening med hjälp av vår
-                avancerade matchmaking-plattform.
-            </p>
-            """,
-            unsafe_allow_html=True
-        )
-
-        # Empty space
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        # Call-to-action
-        st.markdown(
-            """
-            <div style='text-align:center;'>
-                <p style='font-size:1.5rem;color:#1e40af;font-weight:500;'>
-                    Kom igång genom att klicka på "Hitta sponsorer" fliken ovan
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        cards = [
+            ("✨", "Tips & tricks", "Råd för att locka sponsorer snabbare."),
+            ("⚙️", "Inställningar", "Justera profil, sekretess och synlighet."),
+            ("ℹ️", "Om Golden Sugar Daddy Goal", "Så fungerar plattformen och affärsmodellen."),
+            ("🤝", "Partnerskap", "Framgångscase och inspirerande stories."),
+            ("📣", "Nyheter", "Senaste uppdateringar och releaser."),
+            ("❓", "Support & FAQ", "Hjälp, guider och vanliga frågor."),
+        ]
+        cols = st.columns(3, gap="large")
+        for i, (icon, title, text) in enumerate(cards):
+            with cols[i % 3]:
+                st.markdown(
+                    f"""
+                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;
+                                padding:1.5rem;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                      <div style="font-size:2rem;color:#2563eb;margin-bottom:0.5rem;">{icon}</div>
+                      <div style="font-size:1.125rem;font-weight:600;color:#1e40af;margin-bottom:0.5rem;">{title}</div>
+                      <div style="font-size:0.875rem;color:#4b5563;">{text}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
     # ─────────── SEARCH (with MAP) ─────────────────────────────────────────
     def _render_search(self) -> None:
@@ -148,10 +140,10 @@ class SponsorMatchUI:
         )
         f1, f2 = st.columns(2, gap="large")
         with f1:
-            city = st.text_input("Ort", value="", key="filter_city")
-            radius = st.slider("Radie (km)", 0, 100, 25, key="filter_radius")
+            city     = st.text_input("Ort", value="", key="filter_city")
+            radius   = st.slider("Radie (km)", 0, 100, 25, key="filter_radius")
             industry = st.selectbox("Bransch", ["Bank", "Energi", "IT"], key="filter_industry")
-            size = st.selectbox("Storlek", ["Liten", "Medel", "Stor"], key="filter_size")
+            size     = st.selectbox("Storlek", ["Liten", "Medel", "Stor"], key="filter_size")
             if st.button("Sök", key="do_search"):
                 st.session_state["results"] = self._get_dummy_sponsors(city, radius, industry, size)
 
@@ -186,38 +178,6 @@ class SponsorMatchUI:
                 st.markdown("### Kartvy", unsafe_allow_html=True)
                 self._render_map()
 
-    # ─────────── SETTINGS PAGE ───────────────────────────────────────────────
-    @staticmethod
-    def _render_settings() -> None:
-        st.markdown(
-            "<h2 style='font-size:2rem;font-weight:600;color:#1e40af;'>Inställningar</h2>",
-            unsafe_allow_html=True,
-        )
-
-        with st.form("settings_form"):
-            st.subheader("Notifikationer")
-            # Prefix with underscore to indicate intentionally unused variables
-            _email_notifications = st.checkbox("E-postnotifikationer", value=True)
-            _sponsorship_alerts = st.checkbox("Sponsringsrekommendationer", value=True)
-
-            st.subheader("Visningsalternativ")
-            st.select_slider(
-                "Resultat per sida",
-                options=[5, 10, 15, 20, 25],
-                value=15
-            )
-            st.select_slider(
-                "Kartdetaljnivå",
-                options=["Låg", "Medium", "Hög"],
-                value="Medium"
-            )
-
-            st.subheader("Datainställningar")
-            st.checkbox("Spara sökhistorik", value=True)
-            st.checkbox("Tillåt anonym användardata", value=True)
-
-            st.form_submit_button("Spara inställningar")
-
     # ─────────── PROFILE ─────────────────────────────────────────────────────
     @staticmethod
     def _render_profile() -> None:
@@ -243,7 +203,7 @@ class SponsorMatchUI:
             col = st.columns(2, gap="large")[i % 2]
             with col:
                 st.markdown(
-                    f"""
+                            f"""
                             <div style="background:#eff6ff;border:1px solid #bfdbfe;
                                         border-radius:8px;padding:1.5rem;text-align:center;
                                         box-shadow:0 1px 2px rgba(0,0,0,0.05);">
@@ -267,12 +227,11 @@ class SponsorMatchUI:
     # ─────────── DUMMY DATA ────────────────────────────────────────────────
     @staticmethod
     def _get_dummy_sponsors(
-            city: Optional[str] = None,
-            radius: Optional[int] = None,
-            industry: Optional[str] = None,
-            size: Optional[str] = None,
+        city: Optional[str] = None,
+        radius: Optional[int] = None,
+        industry: Optional[str] = None,
+        size: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        # Using _ to indicate intentionally unused parameters
         _ = (city, radius, industry, size)
         return [
             {
@@ -305,8 +264,7 @@ class SponsorMatchUI:
         ]
 
     # ─────────── MAP METHOD ───────────────────────────────────────────────
-    @staticmethod
-    def _render_map() -> None:
+    def _render_map(self) -> None:
         club = st.session_state.get(
             "club_data", {"lat": 57.7089, "lon": 11.9746}
         )
@@ -319,7 +277,7 @@ class SponsorMatchUI:
         if "id" in club:
             Marker(
                 location=[club["lat"], club["lon"]],
-                popup=Popup(f"<b>{club.get('name', 'Din förening')}</b>", max_width=300),
+                popup=Popup(f"<b>{club.get('name','Din förening')}</b>", max_width=300),
                 icon=Icon(color="red", icon="home"),
             ).add_to(m)
 

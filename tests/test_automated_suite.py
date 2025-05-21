@@ -187,14 +187,14 @@ class TestUI:
 
     def test_ui_import(self):
         """Test that UI can be imported"""
-        from sponsor_match.ui.app_v2 import SponsorMatchUI
+        from sponsor_match.ui.app import SponsorMatchUI
 
         ui = SponsorMatchUI()
         assert ui is not None
 
     def test_ui_attributes(self):
         """Test UI has expected attributes"""
-        from sponsor_match.ui.app_v2 import SponsorMatchUI
+        from sponsor_match.ui.app import SponsorMatchUI
 
         ui = SponsorMatchUI()
 

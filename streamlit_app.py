@@ -7,7 +7,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Import and run the actual app
-from sponsor_match.ui.app_v2 import main
+from sponsor_match.ui.app import main
 
 if __name__ == "__main__":
     main()
