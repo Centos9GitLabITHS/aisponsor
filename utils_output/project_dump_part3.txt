@@ -1,0 +1,1026 @@
+================================================================================
+FIL: sponsor_match/ui/services/search_services.py
+================================================================================
+
+from sponsor_match.ml.pipeline import score_and_rank
+
+def recommend_sponsors(club_id: int, club_bucket: str,
+                       max_distance: float = 50.0, top_n: int = 10):
+    """
+    Returns list of {id,name,lat,lon,distance,score} for top_n companies.
+    """
+    return score_and_rank(
+        assoc_id=club_id,
+        assoc_bucket=club_bucket,
+        max_distance=max_distance,
+        top_n=top_n
+    )
+
+
+================================================================================
+FIL: sponsor_match/ui/components/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: sponsor_match/ui/components/cards.py
+================================================================================
+
+"""
+Card UI components for SponsorMatch application.
+"""
+import streamlit as st
+
+
+def render_info_card(icon, title, text):
+    """
+    Render an information card with icon, title and text.
+
+    Args:
+        icon: Emoji or icon character
+        title: Card title
+        text: Card description text
+    """
+    st.markdown(
+        f"""
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;
+                    padding:1.5rem;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div style="font-size:2rem;color:#2563eb;margin-bottom:0.5rem;">{icon}</div>
+          <div style="font-size:1.125rem;font-weight:600;color:#1e40af;margin-bottom:0.5rem;">{title}</div>
+          <div style="font-size:0.875rem;color:#4b5563;">{text}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_sponsor_card(sponsor):
+    """
+    Render a sponsor card with company information and contact button.
+
+    Args:
+        sponsor: Dictionary containing sponsor information
+    """
+    # Extract sponsor details, with defaults for missing values
+    name = sponsor.get('name', 'Unknown Sponsor')
+    description = sponsor.get('description', 'No description available.')
+    score = sponsor.get('score', 0)
+    revenue = sponsor.get('revenue_ksek', 'N/A')
+    employees = sponsor.get('employees', 'N/A')
+    industry = sponsor.get('industry', 'N/A')
+
+    # Format score as percentage
+    score_display = f"{score:.0%}" if isinstance(score, (int, float)) else "N/A"
+
+    # Create formatted card with all information
+    st.markdown(
+        f"""
+        <div style="background:white;padding:1.5rem;border-radius:8px;
+                    box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:1rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+            <div style="font-size:1.125rem;font-weight:700;color:#1e40af;">{name}</div>
+            <div style="background:#dbeafe;color:#1e40af;padding:0.25rem 0.5rem;
+                        border-radius:9999px;font-size:0.75rem;font-weight:600;">
+              {score_display} match
+            </div>
+          </div>
+          <div style="font-size:0.875rem;color:#4b5563;margin-bottom:0.75rem;">{description}</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;
+                      font-size:0.75rem;color:#6b7280;margin-bottom:1rem;">
+            <div>
+              <div style="font-weight:600;">Omsättning</div>
+              <div>{revenue} tkr</div>
+            </div>
+            <div>
+              <div style="font-weight:600;">Anställda</div>
+              <div>{employees}</div>
+            </div>
+            <div>
+              <div style="font-weight:600;">Bransch</div>
+              <div>{industry}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:0.5rem;">
+            <button style="flex:1;background:#2563eb;color:white;padding:0.5rem 1rem;
+                           border:none;border-radius:4px;font-weight:500;cursor:pointer;">
+              📧 Kontakta
+            </button>
+            <button style="flex:1;background:#f3f4f6;color:#374151;padding:0.5rem 1rem;
+                           border:none;border-radius:4px;font-weight:500;cursor:pointer;">
+              ℹ️ Detaljer
+            </button>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_stat_card(title, value, description=None, trend=None):
+    """
+    Render a statistic card with optional trend indicator.
+
+    Args:
+        title: Stat title
+        value: Main value to display
+        description: Optional description or context
+        trend: Optional trend value (positive or negative number)
+    """
+    # Determine trend styling
+    trend_html = ""
+    if trend is not None:
+        trend_color = "#10b981" if trend > 0 else "#ef4444"  # Green or red
+        trend_arrow = "↑" if trend > 0 else "↓"
+        trend_html = f"""
+        <div style="color:{trend_color};font-size:0.875rem;font-weight:600;">
+          {trend_arrow} {abs(trend):.1f}%
+        </div>
+        """
+
+    # Description HTML if provided
+    desc_html = f"""
+    <div style="color:#6b7280;font-size:0.75rem;">
+      {description}
+    </div>
+    """ if description else ""
+
+    # Render the card
+    st.markdown(
+        f"""
+        <div style="background:white;padding:1.25rem;border-radius:8px;
+                    box-shadow:0 1px 3px rgba(0,0,0,0.1);height:100%;">
+          <div style="color:#6b7280;font-size:0.875rem;margin-bottom:0.5rem;">
+            {title}
+          </div>
+          <div style="display:flex;align-items:baseline;gap:0.5rem;">
+            <div style="font-size:1.5rem;font-weight:700;color:#111827;">
+              {value}
+            </div>
+            {trend_html}
+          </div>
+          {desc_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+================================================================================
+FIL: sponsor_match/ui/components/map_view.py
+================================================================================
+
+# sponsor_match/ui/components/map_view.py
+
+import streamlit as st
+from folium import Map, Marker, Popup, Icon
+from folium.plugins import MarkerCluster, HeatMap
+from streamlit_folium import st_folium
+
+def render_map(club=None, sponsors=None, height=400, width=None):
+    """
+    Render an interactive map with club and sponsor markers.
+
+    Args:
+        club: Dictionary with club information (optional)
+        sponsors: List of sponsor dictionaries (optional)
+        height: Map height in pixels (default 400)
+        width:  Map width in pixels (optional; omit to auto-size)
+    """
+    # Default center on Gothenburg
+    center = [57.7089, 11.9746]
+    if club and club.get('lat') and club.get('lon'):
+        center = [club['lat'], club['lon']]
+
+    m = Map(location=center, zoom_start=12, tiles="CartoDB positron")
+
+    # Club marker
+    if club and club.get('lat') and club.get('lon'):
+        Marker(
+            location=[club['lat'], club['lon']],
+            popup=Popup(_club_popup(club), max_width=300),
+            icon=Icon(color='purple', icon='flag', prefix='fa'),
+            tooltip=club.get('name', 'Club')
+        ).add_to(m)
+
+    # Sponsor markers
+    if sponsors:
+        cluster = MarkerCluster().add_to(m)
+        heat_data = []
+        for sponsor in sponsors:
+            if sponsor.get('lat') and sponsor.get('lon'):
+                Marker(
+                    location=[sponsor['lat'], sponsor['lon']],
+                    popup=Popup(_sponsor_popup(sponsor), max_width=300),
+                    icon=Icon(color=_marker_color(sponsor), icon='building', prefix='fa'),
+                    tooltip=sponsor.get('name', 'Sponsor')
+                ).add_to(cluster)
+                if sponsor.get('score') is not None:
+                    heat_data.append([sponsor['lat'], sponsor['lon'], sponsor['score']])
+        if heat_data:
+            HeatMap(heat_data).add_to(m)
+
+    # Only pass width if it’s a real integer
+    if width:
+        return st_folium(m, width=width, height=height)
+    else:
+        return st_folium(m, height=height)
+
+
+def _club_popup(club):
+    return f"""
+    <div style="width:200px">
+        <h4>{club.get('name','')}</h4>
+        <p><b>Medlemmar:</b> {club.get('member_count','N/A')}</p>
+        <p><b>Storlek:</b> {club.get('size_bucket','').title()}</p>
+        <p><b>Adress:</b> {club.get('address','N/A')}</p>
+    </div>
+    """
+
+def _sponsor_popup(sponsor):
+    contact = sponsor.get('contact', {})
+    return f"""
+    <div style="width:200px">
+        <h4>{sponsor.get('name','')}</h4>
+        <p>{sponsor.get('description','')}</p>
+        <p>📧 {contact.get('email','')}</p>
+        <p>📞 {contact.get('phone','')}</p>
+    </div>
+    """
+
+def _marker_color(sponsor):
+    score = sponsor.get('score', 0)
+    if score >= 75:
+        return 'green'
+    if score >= 50:
+        return 'orange'
+    return 'red'
+
+
+================================================================================
+FIL: sponsor_match/ui/components/modals.py
+================================================================================
+
+"""
+Modal dialog components for SponsorMatch application.
+"""
+import streamlit as st
+
+
+def show_login_modal():
+    """Show a login modal dialog."""
+    # Use Streamlit's experimental modal feature if available
+    use_experimental = hasattr(st, "modal")
+
+    if use_experimental:
+        with st.modal("Logga in", key="login_modal"):
+            _render_login_form()
+    else:
+        # Fallback to expander
+        with st.expander("Logga in", expanded=True):
+            _render_login_form()
+
+
+def show_sponsor_modal(sponsor):
+    """
+    Show a sponsor details modal dialog.
+
+    Args:
+        sponsor: Dictionary with sponsor information
+    """
+    use_experimental = hasattr(st, "modal")
+    title = sponsor.get('name', 'Sponsor')
+
+    if use_experimental:
+        with st.modal(title, key="sponsor_modal"):
+            _render_sponsor_details(sponsor)
+    else:
+        # Fallback to expander
+        with st.expander(title, expanded=True):
+            _render_sponsor_details(sponsor)
+
+
+def show_confirmation_modal(title, message, confirm_text="Bekräfta", cancel_text="Avbryt"):
+    """
+    Show a confirmation dialog and return the result.
+
+    Args:
+        title: Modal title
+        message: Message to display
+        confirm_text: Text for confirm button
+        cancel_text: Text for cancel button
+
+    Returns:
+        True if confirmed, False otherwise
+    """
+    use_experimental = hasattr(st, "modal")
+
+    if use_experimental:
+        with st.modal(title, key="confirm_modal"):
+            st.write(message)
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button(cancel_text, key="modal_cancel"):
+                    return False
+            with col2:
+                if st.button(confirm_text, key="modal_confirm", type="primary"):
+                    return True
+    else:
+        # Fallback to regular UI
+        st.write(message)
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button(cancel_text, key="confirm_cancel"):
+                return False
+        with col2:
+            if st.button(confirm_text, key="confirm_confirm", type="primary"):
+                return True
+
+    return False
+
+
+def _render_login_form():
+    """Render login form content."""
+    st.text_input("E-post", key="login_email")
+    st.text_input("Lösenord", type="password", key="login_password")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.checkbox("Kom ihåg mig", key="remember_me")
+    with col2:
+        st.markdown(
+            "<div style='text-align:right;'><a href='#'>Glömt lösenord?</a></div>",
+            unsafe_allow_html=True
+        )
+
+    if st.button("Logga in", type="primary", key="do_login"):
+        st.success("Inloggning lyckades!")
+        return True
+
+    st.markdown("---")
+    st.markdown("Har du inget konto? [Registrera dig här](#)")
+
+    return False
+
+
+def _render_sponsor_details(sponsor):
+    """Render sponsor details content."""
+    # Extract sponsor details with defaults
+    name = sponsor.get('name', 'Unknown Sponsor')
+    description = sponsor.get('description', 'No description available.')
+    industry = sponsor.get('industry', 'N/A')
+    revenue = sponsor.get('revenue_ksek', 'N/A')
+    employees = sponsor.get('employees', 'N/A')
+    website = sponsor.get('website', '#')
+    email = sponsor.get('contact', {}).get('email', 'kontakt@företag.se')
+    phone = sponsor.get('contact', {}).get('phone', 'N/A')
+
+    # Display sponsor information
+    st.subheader(name)
+    st.write(description)
+
+    # Company details
+    st.markdown("### Företagsinformation")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Bransch", industry)
+    with col2:
+        st.metric("Omsättning", f"{revenue} tkr")
+    with col3:
+        st.metric("Anställda", employees)
+
+    # Contact information
+    st.markdown("### Kontaktuppgifter")
+    st.write(f"📧 E-post: {email}")
+    st.write(f"📞 Telefon: {phone}")
+    if website != '#':
+        st.write(f"🌐 [Besök webbplats]({website})")
+
+    # Contact form
+    st.markdown("### Skicka meddelande")
+    with st.form("contact_form"):
+        st.text_area("Meddelande", placeholder="Skriv ditt meddelande här...")
+        submitted = st.form_submit_button("Skicka")
+
+        if submitted:
+            st.success("Meddelande skickat!")
+
+
+================================================================================
+FIL: sponsor_match/ui/components/sidebar.py
+================================================================================
+
+"""
+Sidebar component for SponsorMatch application.
+"""
+import streamlit as st
+from sponsor_match.ui.utils.session import clear_session_data
+
+
+def render_sidebar():
+    """Render the application sidebar."""
+    with st.sidebar:
+        st.title("🏆 SponsorMatch AI")
+        st.markdown("Hitta rätt sponsorer för din idrottsförening")
+        st.divider()
+
+        # Settings section
+        st.subheader("Inställningar")
+        api_key = st.text_input("API-nyckel", value="demo-key", type="password")
+        st.checkbox("Avancerad matchning", value=True,
+                    help="Aktivera AI-baserad matchning")
+
+        # Language selection
+        st.selectbox("Språk", ["Svenska", "English"], index=0)
+
+        st.divider()
+
+        # User actions
+        if st.button("Rensa sökhistorik"):
+            clear_session_data("search_results")
+            clear_session_data("search_scores")
+            st.success("Sökhistorik rensad!")
+
+        if st.button("Logga ut"):
+            clear_session_data()
+            st.success("Du har loggats ut.")
+
+        # About section
+        st.markdown("### Om SponsorMatch AI")
+        st.markdown("""
+        SponsorMatch AI hjälper idrottsföreningar att hitta och kontakta lämpliga 
+        företag som kan bli sponsorer.
+
+        Vi använder AI för att matcha föreningar med företag baserat på geografi, 
+        storlek, bransch och värderingar.
+        """)
+
+        st.markdown("Made with ❤️ by Team 14")
+
+        # Version info
+        st.caption("Version 1.0.0")
+
+
+================================================================================
+FIL: sponsor_match/ui/utils/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: sponsor_match/ui/utils/sessions.py
+================================================================================
+
+"""
+Utilities for managing Streamlit session state.
+"""
+import streamlit as st
+
+
+def get_session_data(key, default=None):
+    """
+    Get data from session state with fallback to default.
+
+    Args:
+        key: Session state key
+        default: Default value if key doesn't exist
+
+    Returns:
+        Value from session state or default
+    """
+    return st.session_state.get(key, default)
+
+
+def set_session_data(key, value):
+    """
+    Set data in session state.
+
+    Args:
+        key: Session state key
+        value: Value to store
+    """
+    st.session_state[key] = value
+
+
+def clear_session_data(key=None):
+    """
+    Clear data from session state.
+
+    Args:
+        key: Specific key to clear, or None to clear all app-specific keys
+    """
+    if key is not None and key in st.session_state:
+        del st.session_state[key]
+    elif key is None:
+        # Clear all app-specific keys (doesn't affect Streamlit's internal keys)
+        app_keys = [k for k in st.session_state.keys()
+                    if not k.startswith('_') and k not in ['formSubmitter', 'formKey']]
+        for k in app_keys:
+            del st.session_state[k]
+
+
+================================================================================
+FIL: sponsor_match/ui/pages/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: sponsor_match/ui/pages/home.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/ui/pages/home.py
+
+Home page for SponsorMatch application.
+"""
+
+import streamlit as st
+
+def render_home_page():
+    """Render the home page with responsive cards."""
+    st.markdown(
+        "<h2 style='font-size:2rem;font-weight:600;color:var(--primaryColor);'>"
+        "Välkommen till SponsorMatch</h2>",
+        unsafe_allow_html=True,
+    )
+
+    # open the flex container
+    st.markdown('<div class="card-container">', unsafe_allow_html=True)
+
+    # each card
+    cards = [
+        ("✨", "Tips & tricks", "Råd för att locka sponsorer snabbare."),
+        ("⚙️", "Inställningar",       "Justera profil, sekretess och synlighet."),
+        ("ℹ️", "Om SponsorMatch",     "Så fungerar plattformen och affärsmodellen."),
+    ]
+    for icon, title, desc in cards:
+        st.markdown(
+            f"""
+            <div class="card">
+              <div style="font-size:2rem;color:var(--primaryColor);">{icon}</div>
+              <h3 style="margin:0.5rem 0;color:var(--primaryColor);">{title}</h3>
+              <p style="margin:0;color:var(--textColor);">{desc}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # close the flex container
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+================================================================================
+FIL: sponsor_match/ui/pages/profile.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/ui/pages/profile.py
+
+Streamlit page for managing club profile.
+"""
+
+import streamlit as st
+
+# fix: it's session.py, not sessions.py
+from sponsor_match.ui.utils.sessions import get_session_data, set_session_data
+
+
+def render_profile_page():
+    st.markdown(
+        "<h2 style='font-size:2rem;font-weight:600;color:var(--primaryColor);'>"
+        "Min förening</h2>",
+        unsafe_allow_html=True,
+    )
+
+    # get_session_data() may return None, so we coalesce to a dict
+    club = get_session_data("selected_club") or {}
+
+    if club:
+        _render_profile_form(club)
+    else:
+        st.info(
+            "Du har inte valt någon förening. "
+            "Använd sökfunktionen för att hitta din förening."
+        )
+        _render_profile_form(None)
+
+    with st.expander("Sponsorhistorik", expanded=False):
+        _render_sponsorship_history()
+
+    with st.expander("Inställningar", expanded=False):
+        _render_preferences()
+
+
+def _render_profile_form(club: dict | None = None):
+    with st.form("profile_form"):
+        # prefill from club dict or fall back to empty strings
+        name    = st.text_input("Föreningens namn", value=club.get("name","") if club else "")
+        address = st.text_input("Adress",           value=club.get("address","") if club else "")
+
+        # size bucket select
+        size_labels = ["Liten", "Medel", "Stor"]
+        rev_map     = {"Liten":"small","Medel":"medium","Stor":"large"}
+        # figure out which index to preselect
+        if club and club.get("size_bucket") in {"small","medium","large"}:
+            pre = {"small":"Liten","medium":"Medel","large":"Stor"}[club["size_bucket"]]
+            default_idx = size_labels.index(pre)
+        else:
+            default_idx = 1  # Medel
+        size_sel = st.selectbox("Storlek", size_labels, index=default_idx)
+
+        email = st.text_input("E-post",   value=club.get("email","") if club else "")
+        phone = st.text_input("Telefon",  value=club.get("phone","") if club else "")
+        desc  = st.text_area("Beskrivning", value=club.get("description","") if club else "")
+
+        if st.form_submit_button("Spara profil"):
+            st.success("Profilen har sparats!")
+            profile = {
+                "name":         name,
+                "address":      address,
+                "size_bucket":  rev_map[size_sel],
+                "email":        email,
+                "phone":        phone,
+                "description":  desc,
+            }
+            # preserve id + coords if they existed
+            if club:
+                for key in ("id","latitude","longitude"):
+                    if key in club:
+                        profile[key] = club[key]
+            set_session_data("selected_club", profile)
+
+
+def _render_sponsorship_history():
+    st.markdown("#### Nuvarande sponsorer")
+    history = st.session_state.get("sponsors_history", [])
+    if history:
+        for s in history:
+            st.write(f"**{s['name']}** ({s['contract_date']} – {s['end_date']}) • {s['status']}")
+            st.write("---")
+    else:
+        st.write("Inga aktiva sponsoravtal.")
+
+
+def _render_preferences():
+    st.markdown("#### Notifikationsinställningar")
+    st.checkbox("E-postaviseringar",   value=True,  key="email_notifications")
+    st.checkbox("SMS-aviseringar",      value=False, key="sms_notifications")
+
+    st.markdown("#### Sekretess")
+    st.checkbox("Visa förening publikt",      value=True,  key="public_profile")
+    st.checkbox("Tillåt kontakt från företag", value=True,  key="allow_contact")
+
+    if st.button("Spara inställningar", key="save_prefs"):
+        st.success("Inställningarna har sparats!")
+
+
+================================================================================
+FIL: sponsor_match/ui/pages/search.py
+================================================================================
+
+import streamlit as st
+import pandas as pd
+from sqlalchemy import text
+from sponsor_match.core.db import get_engine
+from sponsor_match.ui.services.search_services import recommend_sponsors
+import folium
+from streamlit_folium import st_folium
+
+
+def load_clubs_df() -> pd.DataFrame:
+    """Load all associations from the database into a DataFrame."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            df = pd.read_sql(
+                "SELECT id, name, size_bucket, lat, lon, address FROM associations",
+                conn
+            )
+        return df[df["name"].notna()]
+    except Exception as e:
+        st.error(f"Database error: {e}")
+        # Fallback to sample data
+        return pd.DataFrame({
+            'id': [1, 2, 3, 4, 5],
+            'name': ['IFK Göteborg', 'GAIS', 'BK Häcken', 'Örgryte IS', 'Ahlafors IF'],
+            'size_bucket': ['large', 'medium', 'medium', 'medium', 'small'],
+            'lat': [57.7089, 57.6969, 57.7209, 57.7041, 57.6941],
+            'lon': [11.9746, 11.9789, 11.9390, 12.0027, 11.9124],
+            'address': ['Göteborg', 'Göteborg', 'Göteborg', 'Göteborg', 'Alafors']
+        })
+
+
+def render_search_page():
+    st.title("🔍 Sponsor Match Search")
+
+    # Load clubs data
+    clubs_df = load_clubs_df()
+
+    # Search input with autocomplete
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        search_query = st.text_input("🏆 Search for your association...",
+                                     placeholder="Type at least 2 characters")
+
+    with col2:
+        size_bucket = st.selectbox("Size:", ["small", "medium", "large"], index=1)
+        max_distance = st.slider("Max distance (km):", 1, 100, 15)
+
+    # Initialize session state for selected club
+    if 'selected_club' not in st.session_state:
+        st.session_state.selected_club = None
+    if 'sponsors' not in st.session_state:
+        st.session_state.sponsors = []
+
+    # Autocomplete logic
+    if search_query and len(search_query) >= 2:
+        # Filter clubs based on search
+        filtered_clubs = clubs_df[
+            clubs_df['name'].str.contains(search_query, case=False, na=False)
+        ].head(10)
+
+        if not filtered_clubs.empty:
+            st.write("**Select your association:**")
+            for _, club in filtered_clubs.iterrows():
+                if st.button(f"{club['name']} - {club['address']}",
+                             key=f"club_{club['id']}",
+                             use_container_width=True):
+                    st.session_state.selected_club = club.to_dict()
+                    st.rerun()
+        else:
+            st.warning("No associations found. Try different search terms.")
+
+    # Show selected club and search button
+    if st.session_state.selected_club:
+        club = st.session_state.selected_club
+
+        st.success(f"✅ Selected: **{club['name']}** ({club.get('size_bucket', 'unknown')} size)")
+
+        if st.button("🎯 Find Sponsors", type="primary", use_container_width=True):
+            with st.spinner("Searching for sponsors..."):
+                try:
+                    sponsors = recommend_sponsors(
+                        club_id=club['id'],
+                        club_bucket=size_bucket,
+                        max_distance=max_distance,
+                        top_n=10
+                    )
+                    st.session_state.sponsors = sponsors
+                    if sponsors:
+                        st.success(f"Found {len(sponsors)} potential sponsors!")
+                    else:
+                        st.warning("No sponsors found in this area.")
+                except Exception as e:
+                    st.error(f"Search failed: {e}")
+                    st.session_state.sponsors = []
+
+    # Single map showing everything
+    render_main_map(st.session_state.selected_club, st.session_state.sponsors)
+
+    # Show sponsor results
+    if st.session_state.sponsors:
+        st.subheader("🏢 Potential Sponsors")
+
+        for i, sponsor in enumerate(st.session_state.sponsors):
+            with st.expander(f"{i + 1}. {sponsor['name']} - {sponsor['distance']:.1f}km away"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Distance", f"{sponsor['distance']:.1f} km")
+                with col2:
+                    st.metric("Match Score", f"{sponsor['score']:.2f}")
+                with col3:
+                    st.button(f"Contact {sponsor['name']}",
+                              key=f"contact_{sponsor['id']}")
+
+
+def render_main_map(selected_club, sponsors):
+    """Render a single map showing club and sponsors."""
+
+    # Default center on Gothenburg
+    center_lat, center_lon = 57.7089, 11.9746
+    zoom = 11
+
+    # If club is selected, center on it
+    if selected_club and selected_club.get('lat') and selected_club.get('lon'):
+        center_lat = float(selected_club['lat'])
+        center_lon = float(selected_club['lon'])
+        zoom = 12
+
+    # Create map
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=zoom,
+        tiles="OpenStreetMap"
+    )
+
+    # Add club marker if selected
+    if selected_club and selected_club.get('lat') and selected_club.get('lon'):
+        folium.Marker(
+            location=[float(selected_club['lat']), float(selected_club['lon'])],
+            popup=folium.Popup(f"<b>{selected_club['name']}</b><br>{selected_club.get('address', '')}",
+                               max_width=200),
+            icon=folium.Icon(color='red', icon='home', prefix='fa'),
+            tooltip=selected_club['name']
+        ).add_to(m)
+
+    # Add sponsor markers
+    if sponsors:
+        for sponsor in sponsors:
+            if sponsor.get('lat') and sponsor.get('lon'):
+                # Color based on score
+                if sponsor['score'] > 0.8:
+                    color = 'green'
+                elif sponsor['score'] > 0.5:
+                    color = 'orange'
+                else:
+                    color = 'blue'
+
+                folium.Marker(
+                    location=[float(sponsor['lat']), float(sponsor['lon'])],
+                    popup=folium.Popup(
+                        f"<b>{sponsor['name']}</b><br>"
+                        f"Distance: {sponsor['distance']:.1f}km<br>"
+                        f"Score: {sponsor['score']:.2f}",
+                        max_width=200
+                    ),
+                    icon=folium.Icon(color=color, icon='building', prefix='fa'),
+                    tooltip=f"{sponsor['name']} ({sponsor['distance']:.1f}km)"
+                ).add_to(m)
+
+    # Display map
+    st.subheader("📍 Map")
+    st_folium(m, width=700, height=500)
+
+
+if __name__ == "__main__":
+    render_search_page()
+
+================================================================================
+FIL: sponsor_match/core/config.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/core/config.py
+
+Configuration settings for SponsorMatch AI
+"""
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
+
+# Base directories
+BASE_DIR = Path(__file__).parent.parent.resolve()
+DATA_DIR = BASE_DIR / "data"
+MODELS_DIR = BASE_DIR / "models"
+ASSETS_DIR = BASE_DIR / "assets"
+
+# App constants - these need to be available for UI imports
+APP_TITLE = os.getenv("APP_TITLE", "SponsorMatch AI")
+LOGO_PATH = os.getenv("LOGO_PATH", str(ASSETS_DIR / "logo.png"))
+STREAMLIT_PAGE_ICON = os.getenv("STREAMLIT_PAGE_ICON", "⚽")
+
+# Database URL - make it optional to avoid import crashes
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# If no DATABASE_URL, try to build from components
+if not DATABASE_URL:
+    # Try to build from MySQL components
+    mysql_user = os.getenv("MYSQL_USER", "sponsor_user")
+    mysql_password = os.getenv("MYSQL_PASSWORD", "Sports-2025?!")
+    mysql_host = os.getenv("MYSQL_HOST", "localhost")
+    mysql_port = os.getenv("MYSQL_PORT", "3306")
+    mysql_db = os.getenv("MYSQL_DB", "sponsor_registry")
+
+    DATABASE_URL = f"mysql+mysqlconnector://{mysql_user}:{mysql_password}@{mysql_host}:{mysql_port}/{mysql_db}"
+
+# Geocoding cache
+GEO_CACHE_PATH = BASE_DIR / ".geo_cache.sqlite3"
+
+# Streamlit settings
+STREAMLIT_THEME = os.getenv("STREAMLIT_THEME", "light")
+
+# Logging
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# Clustering model settings
+CLUSTER_MODEL_FILE = os.getenv("CLUSTER_MODEL_FILE", "kmeans.pkl")
+CLUSTER_MODEL_PATH = MODELS_DIR / CLUSTER_MODEL_FILE
+N_CLUSTERS = int(os.getenv("N_CLUSTERS", 5))
+RANDOM_STATE = int(os.getenv("CLUSTER_RANDOM_STATE", 42))
+
+# API keys
+GEOCODING_API_KEY = os.getenv("GEOCODING_API_KEY")
+
+================================================================================
+FIL: sponsor_match/core/db.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/core/db.py
+
+Provides a singleton SQLAlchemy engine for the application,
+loading credentials from the .env file and configuring pooling.
+"""
+
+import os
+import logging
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
+
+# Load environment variables (e.g. DATABASE_URL, DB_POOL_SIZE) from .env
+load_dotenv()
+
+# Internal cache of the engine
+_engine = None
+
+def get_engine():
+    """
+    Return a singleton SQLAlchemy Engine.
+    Raises RuntimeError if DATABASE_URL is not set.
+    """
+    global _engine
+    if _engine is None:
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            raise RuntimeError("DATABASE_URL environment variable not set")
+
+        # Optional pool settings
+        pool_size = int(os.getenv("DB_POOL_SIZE", 5))
+        max_overflow = int(os.getenv("DB_MAX_OVERFLOW", 10))
+
+        try:
+            _engine = create_engine(
+                db_url,
+                pool_size=pool_size,
+                max_overflow=max_overflow,
+                echo=False,
+            )
+            logging.info(
+                f"Created database engine (pool_size={pool_size}, max_overflow={max_overflow})"
+            )
+        except SQLAlchemyError as e:
+            logging.error(f"Failed to create database engine: {e}")
+            raise
+
+    return _engine
+
+
+================================================================================
+FIL: sponsor_match/core/logger.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/core/logger.py
+----------------------------
+Utility to configure and retrieve named loggers, with console
+and optional file handlers.
+"""
+
+import logging
+import sys
+from pathlib import Path
+
+def setup_logger(
+    name: str,
+    log_file: Path | None = None,
+    level: int = logging.INFO
+) -> logging.Logger:
+    """
+    Return a logger configured with:
+      - StreamHandler (stdout) at `level`
+      - Optional FileHandler if `log_file` is provided
+    """
+    logger = logging.getLogger(name)
+    if logger.handlers:
+        # Already configured
+        return logger
+
+    logger.setLevel(level)
+    fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    formatter = logging.Formatter(fmt)
+
+    console = logging.StreamHandler(sys.stdout)
+    console.setLevel(level)
+    console.setFormatter(formatter)
+    logger.addHandler(console)
+
+    if log_file:
+        file_h = logging.FileHandler(log_file)
+        file_h.setLevel(level)
+        file_h.setFormatter(formatter)
+        logger.addHandler(file_h)
+
+    return logger
+
+

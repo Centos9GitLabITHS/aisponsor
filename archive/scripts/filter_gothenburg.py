@@ -103,7 +103,7 @@ def main(scb_path: Path):
     # 8) Output the key fields
     out = df[["PeOrgNr", "district", "registered_address"]]
 
-    dest = Path("data") / "goteborg_companies_addresses.csv"
+    dest = Path("data") / "gothenburg_companies_addresses.csv"
     dest.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(dest, index=False, encoding="utf-8")
     print(f"Wrote {len(out)} rows to {dest}")

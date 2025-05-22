@@ -1,75 +1,72 @@
 #!/usr/bin/env python3
 """
 sponsor_match/data/ingest_associations.py
------------------------------------------
-Read a geocoded associations CSV and load it idempotently into the `clubs` table.
+
+Reads an enriched associations CSV and ingests it into the MySQL database.
 """
 
+import argparse
 import logging
-from argparse import ArgumentParser
 from pathlib import Path
-import sys
 
 import pandas as pd
-from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sponsor_match.core.db import get_engine
+from dotenv import load_dotenv
 
-# Configure logging
-logging.basicConfig(
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    level=logging.INFO,
-)
-logger = logging.getLogger(__name__)
+def init_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s"
+    )
 
-def main(csv_path: Path, db_url: str | None) -> None:
+def ingest(csv_path: Path):
     """
-    Load the associations CSV into the `clubs` table.
-    If the table already has data, it will be truncated first.
+    Load the CSV at csv_path into the `associations` table.
+    Replaces any existing data in `associations`.
     """
-    # Build or fall back to config URL
-    engine = get_engine(db_url) if db_url else get_engine()
-
-    # Read CSV
     if not csv_path.exists():
-        logger.error("CSV file not found at %s", csv_path)
-        sys.exit(1)
+        logging.error(f"CSV file not found: {csv_path}")
+        return
 
-    logger.info("Reading %s", csv_path)
     try:
         df = pd.read_csv(csv_path)
+        logging.info(f"Loaded {len(df)} rows from {csv_path}")
     except Exception as e:
-        logger.exception("Error reading CSV: %s", e)
-        sys.exit(1)
+        logging.error(f"Failed to read CSV {csv_path}: {e}")
+        return
 
-    logger.info("Read %d rows from %s", len(df), csv_path)
-
-    # Drop 'id' column if present, since clubs table has its own PK
-    if "id" in df.columns:
-        logger.info("Dropping 'id' column before insert")
-        df = df.drop(columns=["id"])
-
-    # Idempotent load: truncate then append
+    engine = get_engine()
     try:
         with engine.begin() as conn:
-            conn.execute(text("TRUNCATE TABLE clubs"))
-            df.to_sql("clubs", conn, if_exists="append", index=False)
-            new_count = conn.execute(text("SELECT COUNT(*) FROM clubs")).scalar() or 0
-            logger.info("✅ Associations ingestion complete. Total clubs now: %d", new_count)
+            df.to_sql(
+                name="associations",
+                con=conn,
+                if_exists="replace",
+                index=False,
+                method="multi",      # batch inserts if available
+            )
+        logging.info(f"Successfully wrote {len(df)} rows to `associations` table.")
+    except SQLAlchemyError as e:
+        logging.error(f"Database error during ingest: {e}")
     except Exception as e:
-        logger.exception("Database error during ingest: %s", e)
-        sys.exit(1)
+        logging.error(f"Unexpected error during ingest: {e}")
 
-if __name__ == "__main__":
-    parser = ArgumentParser(description="Ingest geocoded associations into the clubs table")
-    parser.add_argument(
-        "--db-url", "-d",
-        default=None,
-        help="SQLAlchemy URL for your MySQL database (overrides env/config)"
+def main():
+    load_dotenv()    # ensure .env credentials are loaded
+    init_logging()
+
+    parser = argparse.ArgumentParser(
+        description="Ingest enriched associations CSV into MySQL `associations` table"
     )
     parser.add_argument(
-        "csv_path",
+        "--csv-path",
         type=Path,
-        help="Path to geocoded associations CSV"
+        default=Path("data") / "associations_goteborg_with_coords.csv",
+        help="Path to the enriched associations CSV file",
     )
     args = parser.parse_args()
-    main(args.csv_path, args.db_url)
+    ingest(args.csv_path)
+
+if __name__ == "__main__":
+    main()

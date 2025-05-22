@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-sponsor_match/ui/train_matcher.py
--------------------------------
-Train a GradientBoostingClassifier on labeled sponsor–club pairs and save the model.
+cli/train_matcher.py
+---------------------
+Train a GradientBoostingClassifier on labeled sponsor–club pairs
+and save the model artifact under the project's `models/` directory.
 
 Usage:
-    python -m sponsor_match.train_matcher \
-        --input data/positive_pairs.parquet \
-        --model-dir models \
-        --test-size 0.2 \
-        --random-state 1
+    python cli/train_matcher.py \
+      --input data/positive_pairs.parquet \
+      --test-size 0.2 \
+      --random-state 1
 """
 
 import logging
@@ -23,12 +23,16 @@ from sklearn.ensemble import GradientBoostingClassifier
 
 from sponsor_match.models.features import FeatureEngineer
 
-# Configure logging
-logger = logging.getLogger(__name__)
+# configure logging
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    level=logging.INFO,
+    level=logging.INFO
 )
+logger = logging.getLogger(__name__)
+
+# Determine project root and models directory
+PROJECT_ROOT = Path(__file__).resolve().parents[1]  # cli/ -> project root
+DEFAULT_MODEL_DIR = PROJECT_ROOT / "models"
 
 def main(
     input_path: Path,
@@ -38,30 +42,29 @@ def main(
 ) -> None:
     """
     Load training data, engineer features, split into train/validation,
-    train a GradientBoostingClassifier, evaluate on validation,
-    and persist the model.
+    train a GradientBoostingClassifier, evaluate, and save the model.
 
     Parameters
     ----------
     input_path : Path
-        Parquet file containing positive and negative club–company pairs with a 'label' column.
+        Parquet file of labeled club–company pairs with a 'label' column.
     model_dir : Path
         Directory in which to save the trained model artifact.
     test_size : float
-        Proportion of the dataset to reserve for validation.
+        Fraction of data reserved for validation.
     random_state : int
-        Seed for reproducibility of the train/validation split.
+        Seed for reproducible splits.
     """
     logger.info("Loading data from %s", input_path)
     df = pd.read_parquet(input_path)
-    logger.info("Data contains %d rows", len(df))
+    logger.info("Loaded %d rows", len(df))
 
-    logger.info("Creating pairwise features")
+    logger.info("Generating pairwise features")
     X = FeatureEngineer.make_pair_features(df)
     y = df["label"]
 
     logger.info(
-        "Splitting data (test_size=%.2f, random_state=%d)",
+        "Splitting into train/validation (test_size=%.2f, random_state=%d)",
         test_size, random_state
     )
     X_train, X_val, y_train, y_val = train_test_split(
@@ -69,32 +72,33 @@ def main(
     )
 
     logger.info("Training GradientBoostingClassifier")
-    clf = GradientBoostingClassifier()
+    clf = GradientBoostingClassifier(random_state=random_state)
     clf.fit(X_train, y_train)
 
-    val_score = clf.score(X_val, y_val)
-    logger.info("Validation accuracy: %.4f", val_score)
+    val_acc = clf.score(X_val, y_val)
+    logger.info("Validation accuracy: %.4f", val_acc)
 
+    # Ensure the models directory exists
     model_dir.mkdir(parents=True, exist_ok=True)
     model_path = model_dir / "match_gb.joblib"
+
+    logger.info("Saving trained model to %s", model_path)
     joblib.dump(clf, model_path)
-    logger.info("Model saved to %s", model_path)
+    logger.info("Done.")
 
 if __name__ == "__main__":
-    parser = ArgumentParser(
-        description="Train the sponsor–club matching classifier"
-    )
+    parser = ArgumentParser(description="Train the sponsor–club matching classifier")
     parser.add_argument(
         "--input",
         type=Path,
         default=Path("data/positive_pairs.parquet"),
-        help="Path to Parquet file with labeled pairs"
+        help="Parquet file of labeled pairs"
     )
     parser.add_argument(
         "--model-dir",
         type=Path,
-        default=Path("models"),
-        help="Directory to write the trained model"
+        default=DEFAULT_MODEL_DIR,
+        help="Directory for saving model artifacts"
     )
     parser.add_argument(
         "--test-size",
@@ -106,8 +110,9 @@ if __name__ == "__main__":
         "--random-state",
         type=int,
         default=1,
-        help="Random seed for splitting"
+        help="Seed for train/validation split"
     )
+
     args = parser.parse_args()
     main(
         input_path=args.input,

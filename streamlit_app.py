@@ -1,12 +1,13 @@
+#!/usr/bin/env python3
 # streamlit_app.py
-import sys
-from pathlib import Path
+"""
+Entry point for the SponsorMatch AI Streamlit application.
+Installs the .env variables, then hands off to the UI module.
+"""
 
-# Add the project root to Python path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
+from dotenv import load_dotenv
+load_dotenv()  # make sure .env is loaded before anything else
 
-# Import and run the actual app
 from sponsor_match.ui.app import main
 
 if __name__ == "__main__":

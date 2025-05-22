@@ -8,14 +8,63 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f27783fc-e02d-4d39-ad27-aca1d5896aaa" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/sponsor_match/ui/app_cards_showing.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/archive/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/archive/debug/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/archive/debug/debug_report_20250514_182948.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/archive/debug/discover_structure.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/archive/debug/project_structure.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/archive/debug/search_issue_debugger.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/archive/scripts/build_associations_csv.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/retrain_clustering.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sponsor_match/cli/run_pipeline.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sponsor_match/ml/pipeline.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sponsor_match/ui/styles.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/temp_ingest.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_fixes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/utils/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/utils/generate_sample_data.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.env" beforeDir="false" afterPath="$PROJECT_DIR$/.env" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/SponsorMatchAI.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/SponsorMatchAI.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/debug/search_issue_debugger.py" beforeDir="false" afterPath="$PROJECT_DIR$/debug/search_issue_debugger.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/debug/debug_report_20250514_182948.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/debug/discover_structure.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/debug/project_structure.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/debug/search_debug_20250514_182947.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/debug/search_issue_debugger.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/kmeans.joblib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/archive/scripts/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/build_associations_csv.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/filter_gothenburg.py" beforeDir="false" afterPath="$PROJECT_DIR$/archive/scripts/filter_gothenburg.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/geocode_gothenburg_companies.py" beforeDir="false" afterPath="$PROJECT_DIR$/archive/scripts/geocode_gothenburg_companies.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/cli/db_init.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/cli/db_init.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/cli/train_matcher.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/cli/train_matcher.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/core/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/core/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/core/db.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/core/db.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/data/ingest_associations.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/data/ingest_associations.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/data/ingest_companies.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/data/ingest_companies.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/models/clustering.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/models/clustering.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/models/kmeans_large.joblib" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/services/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/services/service.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/sponsor_match/ui/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/components/cards.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/components/cards.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/components/map_view.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/components/map_view.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/components/modals.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/components/modals.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/components/sidebar.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/components/sidebar.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/pages/home.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/pages/home.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/pages/profile.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/pages/profile.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/pages/search.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/pages/search.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/services/data_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/services/data_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/services/search_services.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/services/search_services.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/utils/sessions.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/utils/sessions.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/streamlit_app.py" beforeDir="false" afterPath="$PROJECT_DIR$/streamlit_app.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tasks.py" beforeDir="false" afterPath="$PROJECT_DIR$/tasks.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/manual_test_checklist.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/manual_test_checklist.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_automated_suite.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_automated_suite.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_clustering.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_clustering.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/check_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/check_db.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/list_project_files.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/list_project_files.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -58,21 +107,28 @@
     &quot;Python.deep_analyze.executor&quot;: &quot;Run&quot;,
     &quot;Python.geocode_companies.executor&quot;: &quot;Run&quot;,
     &quot;Python.list_project_files.executor&quot;: &quot;Run&quot;,
+    &quot;Python.search_issue_debugger.executor&quot;: &quot;Run&quot;,
+    &quot;Python.streamlit_app.executor&quot;: &quot;Run&quot;,
     &quot;Python.tasks.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/bakri/PycharmProjects/SponsorMatchAI/sponsor_match/ui&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/bakri/PycharmProjects/SponsorMatchAI/data&quot;,
     &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
 }</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
-      <recent name="$PROJECT_DIR$/sponsor_match/ui" />
       <recent name="$PROJECT_DIR$/data" />
+      <recent name="$PROJECT_DIR$/sponsor_match/ui/utils" />
+      <recent name="$PROJECT_DIR$/sponsor_match/ui/services" />
+      <recent name="$PROJECT_DIR$/sponsor_match/ui" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
+      <recent name="$PROJECT_DIR$/archive" />
+      <recent name="$PROJECT_DIR$/sponsor_match/models" />
       <recent name="$PROJECT_DIR$/utils" />
       <recent name="$PROJECT_DIR$/sponsor_match/core" />
     </key>
@@ -92,28 +148,6 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/sponsor_match/ui/app.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="check_db" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="SponsorMatchAI" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/utils" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/utils/check_db.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -166,27 +200,57 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="Python tests in test_feature_engineer.py" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
+    <configuration name="search_issue_debugger" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="SponsorMatchAI" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
       <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/tests" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/debug" />
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="_new_additionalArguments" value="&quot;&quot;" />
-      <option name="_new_target" value="&quot;$PROJECT_DIR$/tests/test_feature_engineer.py&quot;" />
-      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/debug/search_issue_debugger.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="streamlit_app" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="SponsorMatchAI" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/streamlit_app.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
     <recent_temporary>
       <list>
         <item itemvalue="Python.list_project_files" />
+        <item itemvalue="Python.app" />
+        <item itemvalue="Python.streamlit_app" />
+        <item itemvalue="Python.search_issue_debugger" />
         <item itemvalue="Python.geocode_gothenburg_companies" />
-        <item itemvalue="Python.check_db" />
-        <item itemvalue="Python tests.Python tests in test_feature_engineer.py" />
       </list>
     </recent_temporary>
   </component>

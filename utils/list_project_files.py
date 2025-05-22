@@ -35,7 +35,7 @@ EXCLUDE_FILES = {
     'data/bolag_1_500_sorted_with_year.csv',
     'data/associations_goteborg.csv',
     'data/associations_goteborg_with_coords.csv',
-    'data/goteborg_companies_addresses.csv'
+    'data/gothenburg_companies_addresses.csv'
 }
 EXCLUDE_FILENAMES = {'bolag_1_500_with_coords.csv'}
 

@@ -2,7 +2,7 @@
 """
 sponsor_match/db_init.py
 ------------------------
-Create (if needed) the `clubs` and `companies` tables in MySQL.
+Create (if needed) the `associations` and `companies` tables in MySQL.
 
 Usage:
     python -m sponsor_match.db_init
@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DDL = dedent("""
-   CREATE TABLE IF NOT EXISTS clubs (
+   CREATE TABLE IF NOT EXISTS associations (
         id             INT PRIMARY KEY AUTO_INCREMENT,
         name           VARCHAR(120),
         member_count   INT,
@@ -31,7 +31,7 @@ DDL = dedent("""
         size_bucket    ENUM('small','medium','large'),
         founded_year   INT
    ) CHARACTER SET utf8mb4;
-   
+
    CREATE TABLE IF NOT EXISTS companies (
        id           INT AUTO_INCREMENT PRIMARY KEY,
        orgnr        CHAR(10),
@@ -45,6 +45,7 @@ DDL = dedent("""
        lon          DOUBLE
    ) CHARACTER SET utf8mb4;
 """)
+
 
 def main(dry_run: bool = False) -> None:
     """
@@ -65,10 +66,11 @@ def main(dry_run: bool = False) -> None:
                     continue
                 conn.exec_driver_sql(stmt)
                 logger.info("Executed DDL: %s", stmt.splitlines()[0])
-        logger.info("✅ Tables `clubs` and `companies` are ready")
+        logger.info("✅ Tables `associations` and `companies` are ready")
     except Exception as e:
         logger.exception("Database initialization failed: %s", e)
         raise
+
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="Initialize MySQL tables for SponsorMatch")

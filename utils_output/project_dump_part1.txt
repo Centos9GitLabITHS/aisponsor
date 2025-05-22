@@ -1,0 +1,926 @@
+================================================================================
+FIL: README.md
+================================================================================
+
+# SponsorMatch AI
+
+
+================================================================================
+FIL: pyproject.toml
+================================================================================
+
+[tool.poetry]
+name = "sponsor_match"
+version = "0.1.0"
+description = "SponsorMatch AI: Intelligent sponsor–club matching web app"
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.9.7 || >3.9.7,<4.0"
+streamlit = "^1.15"
+streamlit-folium = "^0.12.0"
+folium = "^0.15.0"
+SQLAlchemy = "^1.4"
+PyMySQL = "^1.0"
+pandas = "^1.3"
+numpy = "^1.21"
+scikit-learn = "1.5.0"
+requests = "^2.26"
+python-dotenv = "^0.19"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^6.2"
+six = "^1.17.0"
+lexicon = "^2.0.1"
+invoke = "1.7.2"
+
+[tool.poetry.scripts]
+sponsor-match = "streamlit_app:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+================================================================================
+FIL: retrain_clustering.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+Retrain clustering models with consistent features.
+Run this to fix the feature dimension mismatch.
+"""
+
+import pandas as pd
+import joblib
+from pathlib import Path
+from sklearn.cluster import KMeans
+from sponsor_match.core.db import get_engine
+
+
+def size_bucket_to_numeric(size_bucket):
+    """Convert size bucket to numeric value."""
+    mapping = {"small": 0, "medium": 1, "large": 2}
+    return mapping.get(size_bucket, 1)
+
+
+def retrain_models():
+    """Retrain clustering models with correct features."""
+
+    # Load associations data
+    engine = get_engine()
+    with engine.connect() as conn:
+        df = pd.read_sql("""
+            SELECT lat, lon, size_bucket, member_count 
+            FROM associations 
+            WHERE lat IS NOT NULL AND lon IS NOT NULL
+        """, conn)
+
+    if df.empty:
+        print("No association data found!")
+        return
+
+    # Convert size_bucket to numeric
+    df['size_numeric'] = df['size_bucket'].apply(size_bucket_to_numeric)
+
+    # Prepare features - using lat, lon, size_numeric (3 features)
+    features = df[['lat', 'lon', 'size_numeric']].values
+
+    # Create models directory
+    models_dir = Path(__file__).resolve().parents[0] / "models"
+    models_dir.mkdir(exist_ok=True)
+
+    # Train default model (for small/medium)
+    default_data = df[df['size_bucket'].isin(['small', 'medium'])]
+
+    if len(default_data) > 5:
+        default_features = default_data[['lat', 'lon', 'size_numeric']].values
+        default_kmeans = KMeans(n_clusters=min(5, len(default_data)), random_state=42)
+        default_kmeans.fit(default_features)
+        joblib.dump(default_kmeans, models_dir / "kmeans.joblib")
+        print(f"Saved default model with {len(default_data)} associations")
+    else:
+        # Create fallback model with all data
+        default_kmeans = KMeans(n_clusters=min(3, len(df)), random_state=42)
+        default_kmeans.fit(features)
+        joblib.dump(default_kmeans, models_dir / "kmeans.joblib")
+        print(f"Saved fallback default model with {len(df)} associations")
+
+    # Train large model
+    large_data = df[df['size_bucket'] == 'large']
+    if len(large_data) > 3:
+        large_features = large_data[['lat', 'lon', 'size_numeric']].values
+        large_kmeans = KMeans(n_clusters=min(3, len(large_data)), random_state=42)
+        large_kmeans.fit(large_features)
+        joblib.dump(large_kmeans, models_dir / "kmeans_large.joblib")
+        print(f"Saved large model with {len(large_data)} associations")
+    else:
+        # Use default model for large too
+        joblib.dump(default_kmeans, models_dir / "kmeans_large.joblib")
+        print("Using default model for large clusters (insufficient large associations)")
+
+
+if __name__ == "__main__":
+    retrain_models()
+    print("Models retrained successfully!")
+
+================================================================================
+FIL: streamlit_app.py
+================================================================================
+
+#!/usr/bin/env python3
+# streamlit_app.py
+"""
+Entry point for the SponsorMatch AI Streamlit application.
+Installs the .env variables, then hands off to the UI module.
+"""
+
+from dotenv import load_dotenv
+load_dotenv()  # make sure .env is loaded before anything else
+
+from sponsor_match.ui.app import main
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: tasks.py
+================================================================================
+
+# tasks.py
+
+from invoke import task
+
+@task
+def build_data(ctx):
+    """
+    Build and preprocess association data CSV (including geocoding).
+    """
+    ctx.run("python -m sponsor_match.data.build_associations_csv", pty=True)
+
+@task
+def ingest_data(ctx):
+    """
+    Ingest the associations CSV into the MySQL database.
+    """
+    ctx.run("python -m sponsor_match.data.ingest_associations", pty=True)
+
+@task(pre=[build_data, ingest_data])
+def refresh_db(ctx):
+    """
+    Run build_data then ingest_data to refresh the database end-to-end.
+    """
+    # pre-tasks already ran; use ctx so the parameter isn't unused
+    ctx.run("echo 'Database refresh complete.'", pty=True)
+
+@task
+def run(ctx):
+    """
+    Launch the Streamlit application.
+    """
+    ctx.run("streamlit run streamlit_app.py", pty=True)
+
+@task
+def test(ctx):
+    """
+    Run the test suite.
+    """
+    ctx.run("pytest --maxfail=1 --disable-warnings -q", pty=True)
+
+
+================================================================================
+FIL: temp_ingest.py
+================================================================================
+
+# temp_ingest.py
+import pandas as pd
+from sponsor_match.core.db import get_engine
+
+df = pd.read_csv('data/gothenburg_associations.csv')
+df_clean = pd.DataFrame({
+    'name': df['Namn'],
+    'address': df['Adress'] + ', ' + df['Post Nr'].fillna('') + ' ' + df['Postort'].fillna(''),
+    'member_count': 100,  # Default value
+    'lat': 57.7089,  # Default Gothenburg coordinates
+    'lon': 11.9746,
+    'size_bucket': 'medium',
+    'founded_year': 2000
+})
+
+engine = get_engine()
+df_clean.to_sql('associations', engine, if_exists='replace', index=False)
+print(f"Loaded {len(df_clean)} associations")
+
+
+================================================================================
+FIL: tests/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: tests/test_clustering.py
+================================================================================
+
+import pandas as pd
+import pytest
+
+from sponsor_match.models.clustering import train, load_model, predict
+
+
+@pytest.fixture(autouse=True)
+def clear_env(monkeypatch):
+    # Ensure clustering environment variables are set for the test
+    monkeypatch.setenv("N_CLUSTERS", "2")
+    monkeypatch.setenv("CLUSTER_RANDOM_STATE", "42")
+    return monkeypatch
+
+def test_train_and_persistence(tmp_path, clear_env):
+    # Build a tiny CSV with two distinct points
+    csv_path = tmp_path / "points.csv"
+    df = pd.DataFrame({
+        "latitude": [0.0, 10.0],
+        "longitude": [0.0, 10.0],
+    })
+    df.to_csv(csv_path, index=False)
+
+    # Point the model directory into tmp_path
+    model_file = tmp_path / "kmeans_test.pkl"
+    # Call train()
+    train(input_csv=csv_path, model_file=model_file)
+
+    # The model file must exist
+    assert model_file.exists()
+
+    # Load it back
+    model = load_model(model_file)
+    assert hasattr(model, "predict")
+
+    # Predictions should return a valid cluster label (0 or 1)
+    label0 = predict(0.0, 0.0, model)
+    label1 = predict(10.0, 10.0, model)
+    assert isinstance(label0, int) and label0 in (0, 1)
+    assert isinstance(label1, int) and label1 in (0, 1)
+    # The two extreme points should not be in the same cluster
+    assert label0 != label1
+
+
+================================================================================
+FIL: tests/test_service.py
+================================================================================
+
+import pytest
+from sqlalchemy import create_engine, text
+
+from sponsor_match.services.service import search, recommend
+
+
+@pytest.fixture
+def engine(tmp_path, monkeypatch):
+    """
+    Create an in-memory SQLite engine with minimal schema and sample data.
+    """
+    # Use SQLite in-memory for tests
+    engine = create_engine("sqlite:///:memory:")
+
+    # Create tables
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE clubs (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                address TEXT,
+                latitude REAL,
+                longitude REAL
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE sponsors (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                latitude REAL,
+                longitude REAL,
+                preferred_cluster INTEGER
+            )
+        """))
+
+        # Insert one club and one sponsor
+        conn.execute(text("""
+            INSERT INTO clubs (id, name, address, latitude, longitude)
+            VALUES (1, 'Test Club', '123 Main St', 10.0, 20.0)
+        """))
+        conn.execute(text("""
+            INSERT INTO sponsors (id, name, latitude, longitude, preferred_cluster)
+            VALUES (1, 'Test Sponsor', 10.1, 20.1, NULL)
+        """))
+
+    # Monkey-patch get_engine if your code calls it directly
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    return engine
+
+def test_search_finds_club_and_sponsor(engine, monkeypatch):
+    # If your search() calls get_engine(), patch it; otherwise pass engine directly
+    # monkeypatch.setattr("sponsor_match.services.service.get_engine", lambda: engine)
+
+    # Search for "Test" should return the club entry
+    df = search(engine, "Test")
+    assert not df.empty
+    assert "Test Club" in df["name"].values
+
+def test_recommend_no_match_returns_empty(engine):
+    # Nonexistent club name should yield empty DataFrame
+    df = recommend(engine, "No Such Club", top_n=5)
+    assert df.empty
+
+def test_recommend_fallback_by_distance(engine, monkeypatch):
+    # Force clustering to fail so fallback logic kicks in
+    monkeypatch.setattr("sponsor_match.services.service.load_model", lambda: None)
+    monkeypatch.setattr("sponsor_match.services.service.predict", lambda lat, lon, model=None: None)
+
+    df = recommend(engine, "Test Club", top_n=1)
+    assert not df.empty
+    # Should compute a 'distance' column
+    assert "distance" in df.columns
+    # The nearest sponsor (only one) should appear
+    assert df.iloc[0]["name"] == "Test Sponsor"
+
+
+================================================================================
+FIL: archive/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: archive/scripts/__init__.py
+================================================================================
+
+# makes scripts a package
+
+
+================================================================================
+FIL: archive/scripts/build_associations_csv.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+scripts/build_associations_csv.py
+
+Reads a raw associations CSV, geocodes missing latitude/longitude,
+and writes an enriched CSV for ingestion.
+"""
+
+import argparse
+import logging
+import sqlite3
+from pathlib import Path
+
+import pandas as pd
+import requests
+from dotenv import load_dotenv
+
+# Load .env early so we can pick up any GEOCODING_API_KEY or other vars
+load_dotenv()
+
+# Constants
+DEFAULT_INPUT = Path("data") / "associations_raw.csv"
+DEFAULT_OUTPUT = Path("data") / "associations_goteborg_with_coords.csv"
+DEFAULT_CACHE_DB = Path(".geo_cache.sqlite3")
+
+# Adjust this to your geocoding API if using another service
+GEOCODER_URL = "https://nominatim.openstreetmap.org/search"
+
+
+def init_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s"
+    )
+
+
+def open_cache(db_path: Path) -> sqlite3.Connection:
+    """Open or create the geocode cache database."""
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS geocode_cache (
+            address TEXT PRIMARY KEY,
+            latitude REAL,
+            longitude REAL
+        )
+        """
+    )
+    conn.commit()
+    return conn
+
+
+def geocode(address: str, conn: sqlite3.Connection, api_key: str = None):
+    """Return (lat, lon) for address, using cache or external API."""
+    # Check cache first
+    row = conn.execute(
+        "SELECT latitude, longitude FROM geocode_cache WHERE address = ?",
+        (address,),
+    ).fetchone()
+    if row:
+        return row
+
+    # Not in cache: call external service
+    try:
+        params = {"q": address, "format": "json", "limit": 1}
+        # If your service requires an API key, add it here
+        if api_key:
+            params["key"] = api_key
+        resp = requests.get(GEOCODER_URL, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if not data:
+            raise ValueError(f"No results for '{address}'")
+        lat = float(data[0]["lat"])
+        lon = float(data[0]["lon"])
+    except Exception as e:
+        logging.warning(f"Geocoding failed for '{address}': {e}")
+        return None, None
+
+    # Cache the result
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO geocode_cache(address, latitude, longitude) VALUES (?, ?, ?)",
+            (address, lat, lon),
+        )
+        conn.commit()
+    except Exception as e:
+        logging.warning(f"Failed to cache geocode for '{address}': {e}")
+
+    return lat, lon
+
+
+def main():
+    init_logging()
+    parser = argparse.ArgumentParser(
+        description="Build associations CSV by adding lat/lon via geocoding"
+    )
+    parser.add_argument(
+        "--input-csv",
+        type=Path,
+        default=DEFAULT_INPUT,
+        help="Path to raw associations CSV",
+    )
+    parser.add_argument(
+        "--output-csv",
+        type=Path,
+        default=DEFAULT_OUTPUT,
+        help="Path to write enriched associations CSV",
+    )
+    parser.add_argument(
+        "--cache-db",
+        type=Path,
+        default=DEFAULT_CACHE_DB,
+        help="Path to SQLite cache DB for geocoding results",
+    )
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        default=None,
+        help="Geocoding service API key (if required)",
+    )
+    args = parser.parse_args()
+
+    # Read raw data
+    if not args.input_csv.exists():
+        logging.error(f"Input CSV not found: {args.input_csv}")
+        return
+    df = pd.read_csv(args.input_csv)
+    logging.info(f"Loaded {len(df)} rows from {args.input_csv}")
+
+    # Determine coordinate columns
+    lat_col = next((c for c in df.columns if c.lower() in ("latitude", "lat")), None)
+    lon_col = next((c for c in df.columns if c.lower() in ("longitude", "lon")), None)
+    if not lat_col or not lon_col:
+        lat_col, lon_col = "latitude", "longitude"
+        df[lat_col] = pd.NA
+        df[lon_col] = pd.NA
+    logging.info(f"Using latitude column '{lat_col}', longitude column '{lon_col}'")
+
+    # Prepare cache
+    cache_conn = open_cache(args.cache_db)
+
+    # Geocode missing entries
+    for idx, row in df.iterrows():
+        if pd.isna(row[lat_col]) or pd.isna(row[lon_col]):
+            address = row.get("address") or row.get("club_name") or ""
+            if not address:
+                logging.warning(f"No address for row {idx}; skipping")
+                continue
+            lat, lon = geocode(address, cache_conn, api_key=args.api_key)
+            if lat is not None and lon is not None:
+                df.at[idx, lat_col] = lat
+                df.at[idx, lon_col] = lon
+
+    # Write enriched CSV
+    args.output_csv.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(args.output_csv, index=False)
+    logging.info(f"Wrote enriched CSV to {args.output_csv}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: archive/scripts/filter_gothenburg.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+scripts/filter_gothenburg.py
+-----------------------------
+Extract all Göteborg-municipality companies from a raw SCB bulk file
+(and build a full street address for each) by filtering on the
+canonical 20 district names.
+
+Usage:
+    python scripts/filter_gothenburg.py \
+      --input /home/bakri/Desktop/scb_bulkfil/scb_bulkfil_JE_20250512T094258_21.txt
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+# Logical field names we need
+DESIRED = ["PeOrgNr", "Gatuadress", "PostNr", "PostOrt"]
+
+# The 20 official Göteborg municipality districts
+DISTRICTS = [
+    "Agnesberg", "Angered", "Askim", "Asperö", "Billdal",
+    "Brännö", "Donsö", "Gunnilse", "Göteborg", "Hisings Backa",
+    "Hisings Kärra", "Hovås", "Kungälv", "Köpstadsö", "Olofstorp",
+    "Styrsö", "Säve", "Torslanda", "Vrångö", "Västra Frölunda",
+]
+# Lower-case set for filtering, and map back for canonical casing
+LOWER_DISTRICTS = {d.lower() for d in DISTRICTS}
+DISTRICT_MAP = {d.lower(): d for d in DISTRICTS}
+
+
+def infer_columns(header_cols: list[str]) -> dict[str, str]:
+    """
+    From the raw header_cols, find which actual column corresponds
+    to each name in DESIRED. Returns mapping actual_name -> desired_name.
+    Exits if any desired field is missing.
+    """
+    # map stripped, lower-cased to the real header
+    lookup = {col.strip().lower(): col for col in header_cols}
+    mapping: dict[str, str] = {}
+    for want in DESIRED:
+        key = want.lower()
+        if key not in lookup:
+            print(f"🛑 Missing required column '{want}' in SCB header.", file=sys.stderr)
+            print("Available columns:", file=sys.stderr)
+            for col in header_cols:
+                print("   ", repr(col), file=sys.stderr)
+            sys.exit(1)
+        actual = lookup[key]
+        mapping[actual] = want
+    return mapping
+
+
+def main(scb_path: Path):
+    print(f"Reading SCB header from {scb_path} …")
+    # 1) Sniff header to get actual column names (tab-separated, Latin-1)
+    header_df = pd.read_csv(
+        scb_path,
+        sep="\t",
+        nrows=0,
+        encoding="latin1",
+        low_memory=False
+    )
+    actual_cols = list(header_df.columns)
+
+    # 2) Infer which actual names match our DESIRED fields
+    col_map = infer_columns(actual_cols)
+
+    # 3) Load only those columns
+    print("Loading columns:", list(col_map.keys()))
+    df = pd.read_csv(
+        scb_path,
+        sep="\t",
+        usecols=list(col_map.keys()),
+        dtype=str,
+        encoding="latin1",
+        low_memory=False
+    )
+
+    # 4) Rename to our standard logical names
+    df = df.rename(columns=col_map)
+
+    # 5) Filter to entries whose PostOrt is one of the 20 districts
+    df["PostOrt_norm"] = df["PostOrt"].str.strip().str.lower()
+    df = df[df["PostOrt_norm"].isin(LOWER_DISTRICTS)].copy()
+    print(f"→ {len(df)} firms in Göteborg municipality")
+
+    # 6) Normalize the district back to canonical casing
+    df["district"] = df["PostOrt_norm"].map(DISTRICT_MAP)
+
+    # 7) Build a full street address
+    df["registered_address"] = (
+        df["Gatuadress"].str.strip()
+        + ", "
+        + df["PostNr"].str.strip()
+        + " "
+        + df["district"]
+    )
+
+    # 8) Output the key fields
+    out = df[["PeOrgNr", "district", "registered_address"]]
+
+    dest = Path("data") / "gothenburg_companies_addresses.csv"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(dest, index=False, encoding="utf-8")
+    print(f"Wrote {len(out)} rows to {dest}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Filter SCB dump to Göteborg municipality and build full addresses"
+    )
+    parser.add_argument(
+        "--input", "-i",
+        type=Path,
+        required=True,
+        help="Path to your raw SCB dump file (tab-separated, Latin-1 .txt)"
+    )
+    args = parser.parse_args()
+    main(args.input)
+
+
+================================================================================
+FIL: archive/scripts/geocode_gothenburg_companies.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+scripts/geocode_gothenburg_companies.py
+---------------------------------------
+Geocode Gothenburg company addresses with:
+ - normalization (cache-friendly),
+ - disk-cached results,
+ - periodic checkpointing,
+ - custom Nominatim endpoint support,
+ - thread-based parallelism + RateLimiter (1 req/sec).
+"""
+
+import logging
+import os
+import pickle
+import re
+import time
+from argparse import ArgumentParser
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Dict, Tuple, Optional
+
+import pandas as pd
+from geopy.extra.rate_limiter import RateLimiter
+from geopy.geocoders import Nominatim
+from tqdm import tqdm
+
+# -----------------------------------------------------------------------------
+# CONFIG
+# -----------------------------------------------------------------------------
+CACHE_FILE = Path("data/geocode_cache.pkl")
+CHECKPOINT_INTERVAL = 1000    # save cache & partial CSV every N addresses
+NOMINATIM_URL = os.getenv("NOMINATIM_URL", "https://nominatim.openstreetmap.org")
+USER_AGENT   = "sponsor_match_geo"
+# -----------------------------------------------------------------------------
+
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+def normalize_address(addr: str) -> str:
+    """Lowercase, strip punctuation, standardize spacing & common terms."""
+    s = addr.strip().lower()
+    s = re.sub(r"[,.]", "", s)               # remove commas, periods
+    s = re.sub(r"\bgatan\b", "g", s)         # 'gatan' → 'g'
+    s = re.sub(r"\s+", " ", s)               # collapse whitespace
+    return s
+
+def load_cache() -> Dict[str, Tuple[Optional[float], Optional[float]]]:
+    if CACHE_FILE.exists():
+        with open(CACHE_FILE, "rb") as f:
+            cache = pickle.load(f)
+        logger.info("Loaded %d cached addresses", len(cache))
+    else:
+        cache = {}
+        logger.info("No existing cache; starting fresh")
+    return cache
+
+def save_cache(cache: Dict[str, Tuple[Optional[float], Optional[float]]]):
+    CACHE_FILE.parent.mkdir(exist_ok=True, parents=True)
+    with open(CACHE_FILE, "wb") as f:
+        pickle.dump(cache, f)  # type: ignore
+    logger.info("Checkpoint: saved cache (%d entries)", len(cache))
+
+def geocode_worker_init():
+    """Initialize one shared geocoder + rate limiter per thread."""
+    geocoder = Nominatim(
+        user_agent=USER_AGENT,
+        timeout=10,
+        domain=NOMINATIM_URL.replace("https://", "").replace("http://", ""),
+        scheme=NOMINATIM_URL.split("://")[0]
+    )
+    limiter = RateLimiter(geocoder.geocode, min_delay_seconds=1.1)
+    globals()["_limiter"] = limiter
+
+def geocode_one(addr_norm: str) -> Tuple[str, Optional[float], Optional[float]]:
+    """Try geocoding two variants; return (normalized_address, lat, lon)."""
+    for query in (addr_norm, f"{addr_norm}, sweden"):
+        try:
+            loc = globals()["_limiter"](query, country_codes="se", exactly_one=True)
+        except ExceptionGroup as eg:
+            # Python 3.11+: multiple errors in one go
+            for sub in eg.exceptions:
+                logger.debug("Sub-error for %r: %s", query, sub)
+            time.sleep(2)
+            continue
+        except Exception as e:
+            # any other single error (timeout, network, etc.)
+            logger.debug("Error for %r: %s", query, e)
+            time.sleep(2)
+            continue
+
+        if loc:
+            return addr_norm, loc.latitude, loc.longitude
+
+    return addr_norm, None, None
+
+def parse_args():
+    p = ArgumentParser(description="Geocode Gothenburg addresses w/ caching & threads")
+    p.add_argument("--log-level", "-L", choices=["DEBUG","INFO","WARN","ERROR"], default="INFO")
+    p.add_argument("-w", "--workers", type=int, default=4, help="Thread count")
+    p.add_argument("--no-progress", action="store_true", help="Hide tqdm bar")
+    p.add_argument("in_csv",  type=Path, help="Input CSV with 'address' or 'registered_address'")
+    p.add_argument("out_csv", type=Path, help="Output CSV with lat,lon appended")
+    return p.parse_args()
+
+def main():
+    args = parse_args()
+    logging.getLogger().setLevel(getattr(logging, args.log_level))
+
+    # 1) Load data
+    df = pd.read_csv(args.in_csv, dtype=str)
+    if "address" not in df.columns:
+        if "registered_address" in df.columns:
+            df["address"] = df["registered_address"]
+        else:
+            logger.error("Need column 'address' or 'registered_address'")
+            return
+
+    # 2) Normalize
+    df["address_norm"] = df["address"].map(normalize_address)
+
+    # 3) Load cache & build list
+    cache = load_cache()
+    unique_norm = df["address_norm"].dropna().unique().tolist()
+    to_geo = [a for a in unique_norm if a not in cache]
+    logger.info("Need to geocode %d/%d unique addresses", len(to_geo), len(unique_norm))
+
+    # 4) Parallel geocode with checkpointing
+    if to_geo:
+        with ThreadPoolExecutor(max_workers=args.workers,
+                                initializer=geocode_worker_init) as exe:
+            futures = {exe.submit(geocode_one, addr): addr for addr in to_geo}
+            it = tqdm(as_completed(futures), total=len(futures),
+                      desc="Geocoding", disable=args.no_progress)
+            for i, fut in enumerate(it, start=1):
+                addr = futures[fut]
+                try:
+                    _, lat, lon = fut.result()
+                except ExceptionGroup as eg:
+                    # should never hit here—handled in geocode_one—but just in case:
+                    for sub in eg.exceptions:
+                        logger.debug("Late sub-error for %r: %s", addr, sub)
+                    lat, lon = None, None
+                except Exception as e:
+                    logger.debug("Late error for %r: %s", addr, e)
+                    lat, lon = None, None
+
+                cache[addr] = (lat, lon)
+
+                # checkpoint every N
+                if i % CHECKPOINT_INTERVAL == 0:
+                    save_cache(cache)
+                    # write partial CSV
+                    outp = args.out_csv.with_suffix(".partial.csv")
+                    df_partial = df[df["address_norm"].isin(cache)]
+                    df_partial["lat"] = df_partial["address_norm"].map(lambda x: cache[x][0])
+                    df_partial["lon"] = df_partial["address_norm"].map(lambda x: cache[x][1])
+                    df_partial.to_csv(outp, index=False)
+                    logger.info("Partial CSV (%d rows) → %s", len(df_partial), outp)
+
+        save_cache(cache)
+
+    # 5) Map coords back to full DF
+    df["lat"] = df["address_norm"].map(lambda x: cache.get(x, (None, None))[0])
+    df["lon"] = df["address_norm"].map(lambda x: cache.get(x, (None, None))[1])
+
+    # 6) Write final
+    args.out_csv.parent.mkdir(exist_ok=True, parents=True)
+    df.to_csv(args.out_csv, index=False)
+    logger.info("Wrote %d rows to %s", len(df), args.out_csv)
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: archive/debug/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: archive/debug/debug_report_20250514_182948.json
+================================================================================
+
+{
+  "timestamp": "2025-05-14T18:29:48.158760",
+  "steps": [
+    {
+      "name": "Database Connection",
+      "timestamp": "2025-05-14T18:29:47.290579",
+      "success": false,
+      "error": "type object 'Config' has no attribute 'MYSQL_URL'"
+    },
+    {
+      "name": "Entity Loading",
+      "timestamp": "2025-05-14T18:29:47.472970",
+      "success": false,
+      "error": "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+    },
+    {
+      "name": "Service Layer",
+      "timestamp": "2025-05-14T18:29:47.531033",
+      "success": false,
+      "error": "SponsorMatchService.__init__() missing 2 required positional arguments: 'db_engine' and 'cluster_models'"
+    },
+    {
+      "name": "Distance Calculation",
+      "timestamp": "2025-05-14T18:29:47.531844",
+      "success": true,
+      "error": null
+    },
+    {
+      "name": "Search Functionality",
+      "timestamp": "2025-05-14T18:29:47.532722",
+      "success": false,
+      "error": "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+    },
+    {
+      "name": "UI Integration",
+      "timestamp": "2025-05-14T18:29:48.158534",
+      "success": true,
+      "error": null
+    }
+  ],
+  "errors": [
+    [
+      "Database Connection",
+      "type object 'Config' has no attribute 'MYSQL_URL'"
+    ],
+    [
+      "Entity Loading",
+      "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+    ],
+    [
+      "Service Layer",
+      "SponsorMatchService.__init__() missing 2 required positional arguments: 'db_engine' and 'cluster_models'"
+    ],
+    [
+      "Search Functionality",
+      "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+    ]
+  ],
+  "data_snapshots": {
+    "Distance Calculation": {
+      "distance": 1.2774467019526492
+    },
+    "UI Integration": {
+      "methods": [
+        "clubs_df",
+        "engine",
+        "render_main_page"
+      ],
+      "search_methods": []
+    }
+  }
+}
+

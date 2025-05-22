@@ -1,0 +1,1436 @@
+================================================================================
+FIL: sponsor_match/ml/pipeline.py
+================================================================================
+
+import math
+import joblib
+import pandas as pd
+from pathlib import Path
+from sqlalchemy import text
+from sponsor_match.core.db import get_engine
+
+# point to your two existing models
+MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
+DEFAULT_KMEANS = MODELS_DIR / "kmeans.joblib"
+LARGE_KMEANS = MODELS_DIR / "kmeans_large.joblib"
+
+
+def haversine(lat1, lon1, lat2, lon2):
+    """Compute great-circle distance (km) between two points."""
+    R = 6371.0
+    phi1, lam1, phi2, lam2 = map(math.radians, (lat1, lon1, lat2, lon2))
+    dphi = phi2 - phi1
+    dlam = lam2 - lam1
+    a = (math.sin(dphi / 2) ** 2 +
+         math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2)
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def size_bucket_to_numeric(size_bucket):
+    """Convert size bucket to numeric value for clustering."""
+    mapping = {"small": 0, "medium": 1, "large": 2}
+    return mapping.get(size_bucket, 1)  # default to medium
+
+
+def load_models():
+    """Load your two pre-trained KMeans models."""
+    try:
+        return {
+            "default": joblib.load(DEFAULT_KMEANS),
+            "large": joblib.load(LARGE_KMEANS)
+        }
+    except FileNotFoundError as e:
+        print(f"Warning: Could not load models: {e}")
+        return None
+
+
+def score_and_rank(assoc_id, assoc_bucket,
+                   max_distance=50.0, top_n=10):
+    """
+    1) Fetch the association by ID.
+    2) Fetch all companies.
+    3) Compute distance, size-bucket bonus, cluster bonus.
+    4) Return top_n by composite score.
+    """
+    engine = get_engine()
+    with engine.connect() as conn:
+        club_df = pd.read_sql(
+            text(
+                "SELECT id,name,lat,lon,size_bucket,member_count "
+                "FROM associations WHERE id=:i"
+            ), conn, params={"i": assoc_id}
+        )
+        comps_df = pd.read_sql(
+            "SELECT id,name,lat,lon,size_bucket FROM companies",
+            conn
+        )
+
+    if club_df.empty:
+        return []
+
+    club = club_df.iloc[0]
+
+    # Load models - handle case where they don't exist or have wrong dimensions
+    kms = load_models()
+    if not kms:
+        # Fallback: no clustering, just distance-based ranking
+        return _fallback_distance_ranking(club, comps_df, max_distance, top_n)
+
+    km = kms["large"] if assoc_bucket == "large" else kms["default"]
+
+    # Determine the number of features the model expects
+    try:
+        n_features = km.n_features_in_
+    except AttributeError:
+        # Fallback for older sklearn versions
+        n_features = km.cluster_centers_.shape[1]
+
+    # Prepare features based on what the model expects
+    if n_features == 2:
+        club_features = [club.lat, club.lon]
+    elif n_features == 3:
+        # Add size bucket as third feature
+        size_numeric = size_bucket_to_numeric(getattr(club, 'size_bucket', assoc_bucket))
+        club_features = [club.lat, club.lon, size_numeric]
+    else:
+        print(f"Warning: Model expects {n_features} features, falling back to distance ranking")
+        return _fallback_distance_ranking(club, comps_df, max_distance, top_n)
+
+    try:
+        club_lbl = km.predict([club_features])[0]
+    except Exception as e:
+        print(f"Warning: Clustering prediction failed: {e}, falling back to distance ranking")
+        return _fallback_distance_ranking(club, comps_df, max_distance, top_n)
+
+    recs = []
+    for _, c in comps_df.iterrows():
+        if pd.isna(c.lat) or pd.isna(c.lon):
+            continue
+        d = haversine(club.lat, club.lon, c.lat, c.lon)
+        if d > max_distance:
+            continue
+
+        size_bonus = 1.2 if c.size_bucket == assoc_bucket else 1.0
+
+        # Prepare company features for clustering
+        if n_features == 2:
+            comp_features = [c.lat, c.lon]
+        elif n_features == 3:
+            comp_size_numeric = size_bucket_to_numeric(c.size_bucket)
+            comp_features = [c.lat, c.lon, comp_size_numeric]
+        else:
+            comp_features = [c.lat, c.lon]  # default fallback
+
+        try:
+            comp_lbl = km.predict([comp_features])[0]
+            cluster_bonus = 1.3 if comp_lbl == club_lbl else 1.0
+        except (ValueError, AttributeError):
+            cluster_bonus = 1.0  # neutral if clustering fails
+
+        score = (1.0 / (1.0 + d)) * size_bonus * cluster_bonus
+        recs.append({
+            "id": int(c.id),
+            "name": c.name,
+            "lat": float(c.lat),
+            "lon": float(c.lon),
+            "distance": d,
+            "score": score
+        })
+
+    recs.sort(key=lambda x: x["score"], reverse=True)
+    return recs[:top_n]
+
+
+def _fallback_distance_ranking(club, comps_df, max_distance, top_n):
+    """Fallback ranking based only on distance and size matching."""
+    recs = []
+    club_size = getattr(club, 'size_bucket', 'medium')
+
+    for _, c in comps_df.iterrows():
+        if pd.isna(c.lat) or pd.isna(c.lon):
+            continue
+        d = haversine(club.lat, club.lon, c.lat, c.lon)
+        if d > max_distance:
+            continue
+
+        size_bonus = 1.2 if c.size_bucket == club_size else 1.0
+        score = (1.0 / (1.0 + d)) * size_bonus
+
+        recs.append({
+            "id": int(c.id),
+            "name": c.name,
+            "lat": float(c.lat),
+            "lon": float(c.lon),
+            "distance": d,
+            "score": score
+        })
+
+    recs.sort(key=lambda x: x["score"], reverse=True)
+    return recs[:top_n]
+
+================================================================================
+FIL: sponsor_match/models/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: sponsor_match/models/club_extended.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+models/club_extended.py
+------------------------
+Extended data model for sports clubs, including enrichment fields
+for membership, financials, and sponsorship details.
+"""
+
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
+
+
+@dataclass
+class ExtendedClub:
+    """
+    Represents a sports club with both basic and enriched metadata.
+    """
+
+    # Basic info
+    id: int
+    name: str
+    member_count: int
+    address: str
+    lat: Optional[float]
+    lon: Optional[float]
+    size_bucket: str
+
+    # Extended basic info
+    founded_year: int
+    club_type: str
+    registration_number: str
+    website: str
+    email: str
+    phone: str
+    social_media: Dict[str, str] = field(default_factory=dict)
+
+    # Sports & activities
+    sport_types: List[str] = field(default_factory=list)
+    primary_sport: str = ""
+    leagues: List[str] = field(default_factory=list)
+    division_level: int = 0
+
+    # Membership breakdown
+    active_members: int = 0
+    youth_members: int = 0
+    gender_distribution: Dict[str, float] = field(default_factory=dict)
+    membership_growth_rate: float = 0.0
+
+    # Financials
+    annual_revenue: float = 0.0
+    sponsorship_revenue: float = 0.0
+    financial_status: str = ""
+
+    # Sponsorship history
+    current_sponsors: List[str] = field(default_factory=list)
+    sponsorship_packages: List[Dict[str, any]] = field(default_factory=list)
+    sponsor_retention_rate: float = 0.0
+
+    # Community engagement
+    volunteer_count: int = 0
+    fan_base_size: int = 0
+    social_media_followers: Dict[str, int] = field(default_factory=dict)
+
+    # Infrastructure
+    owned_facilities: List[str] = field(default_factory=list)
+    stadium_capacity: int = 0
+    facility_conditions: Dict[str, str] = field(default_factory=dict)
+
+
+================================================================================
+FIL: sponsor_match/models/clustering.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/models/clustering.py
+
+Defines clustering logic for SponsorMatch AI: training, saving, loading, and inference.
+"""
+import os
+import pickle
+import logging
+from pathlib import Path
+
+import pandas as pd
+from sklearn.cluster import KMeans
+
+from sponsor_match.core.config import DATA_DIR, MODELS_DIR, LOG_LEVEL
+
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL),
+    format="%(asctime)s %(levelname)s %(message)s"
+)
+
+# Constants
+MODEL_FILE = MODELS_DIR / os.getenv("CLUSTER_MODEL_FILE", "kmeans.pkl")
+N_CLUSTERS = int(os.getenv("N_CLUSTERS", 5))
+RANDOM_STATE = int(os.getenv("CLUSTER_RANDOM_STATE", 42))
+FEATURE_COLUMNS = ["latitude", "longitude"]
+
+
+def train(
+    input_csv: Path = None,
+    model_file: Path = None,
+    n_clusters: int = N_CLUSTERS,
+    random_state: int = RANDOM_STATE,
+):
+    """
+    Train a KMeans clustering model on the association data and save the model to disk.
+    """
+    if input_csv is None:
+        input_csv = DATA_DIR / "associations_goteborg_with_coords.csv"
+    if model_file is None:
+        model_file = MODEL_FILE
+
+    if not Path(input_csv).exists():
+        logging.error(f"Input CSV not found: {input_csv}")
+        return
+
+    # Load data
+    df = pd.read_csv(input_csv)
+    if not all(col in df.columns for col in FEATURE_COLUMNS):
+        logging.error(f"Required columns not found in CSV: {FEATURE_COLUMNS}")
+        return
+    features = df[FEATURE_COLUMNS].dropna()
+    if features.empty:
+        logging.error("No valid feature data available for clustering.")
+        return
+
+    # Train model
+    model = KMeans(n_clusters=n_clusters, random_state=random_state)
+    model.fit(features)
+
+    # Ensure models directory exists
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Save model
+    with open(model_file, "wb") as f:
+        pickle.dump(model, f)
+    logging.info(f"Trained KMeans ({n_clusters} clusters) and saved to {model_file}")
+
+
+def load_model(model_file: Path = None):
+    """
+    Load the clustering model from disk.
+    """
+    if model_file is None:
+        model_file = MODEL_FILE
+    if not model_file.exists():
+        raise FileNotFoundError(f"Model file not found: {model_file}")
+    with open(model_file, "rb") as f:
+        model = pickle.load(f)
+    return model
+
+
+def predict(lat: float, lon: float, model=None):
+    """
+    Predict the cluster label for a given latitude and longitude.
+    """
+    if model is None:
+        model = load_model()
+    cluster = model.predict([[lat, lon]])
+    return int(cluster[0])
+
+
+if __name__ == "__main__":
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser(description="Train or retrain the clustering model.")
+    parser.add_argument("--input-csv", type=Path, help="Path to associations CSV")
+    parser.add_argument("--output-model", type=Path, help="Path to save trained model")
+    parser.add_argument("--n-clusters", type=int, default=N_CLUSTERS, help="Number of clusters")
+    parser.add_argument("--random-state", type=int, default=RANDOM_STATE, help="Random seed")
+    args = parser.parse_args()
+
+    train(
+        input_csv=args.input_csv,
+        model_file=args.output_model,
+        n_clusters=args.n_clusters,
+        random_state=args.random_state,
+    )
+
+
+================================================================================
+FIL: sponsor_match/models/entities.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+models/entities.py
+------------------
+Domain entity classes for SponsorMatch AI.
+"""
+
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class Club:
+    """
+    Represents a sports club as loaded from the `clubs` table.
+    """
+    id: int
+    name: str
+    member_count: int
+    address: str
+    lat: Optional[float]
+    lon: Optional[float]
+    size_bucket: str
+    founded_year: int
+
+
+@dataclass
+class Company:
+    """
+    Represents a company as loaded from the `companies` table.
+    """
+    id: int
+    orgnr: str
+    name: str
+    revenue_ksek: float
+    employees: int
+    year: int
+    size_bucket: str
+    lat: Optional[float]
+    lon: Optional[float]
+    industry: str
+
+
+================================================================================
+FIL: sponsor_match/models/features.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/models/features.py
+--------------------------------
+Feature engineering for SponsorMatch ML models.
+
+This module provides comprehensive feature engineering capabilities for analyzing
+and scoring potential sponsor-club matches based on multiple dimensions including
+geographic proximity, size compatibility, and industry relevance.
+"""
+
+import numpy as np
+import pandas as pd
+from datetime import datetime
+from typing import Dict
+
+from geopy.distance import geodesic
+
+
+class FeatureEngineer:
+    """
+    Compute pairwise features between clubs and companies for recommendation ranking.
+
+    This class contains methods for calculating various features used in matching
+    sponsors with clubs, including geographic distance, size compatibility, industry
+    affinity, and economic indicators.
+    """
+
+    @staticmethod
+    def calculate_distance_km(
+        lat1: float, lon1: float, lat2: float, lon2: float
+    ) -> float:
+        """
+        Calculate the geodesic distance in kilometers between two latitude/longitude points.
+
+        Parameters
+        ----------
+        lat1, lon1 : float
+            Latitude and longitude of the first point.
+        lat2, lon2 : float
+            Latitude and longitude of the second point.
+
+        Returns
+        -------
+        float
+            Distance in kilometers.
+
+        Raises
+        ------
+        TypeError
+            If any coordinates are None.
+        ValueError
+            If any coordinates are zero or negative, or otherwise invalid.
+        """
+        # 1) None check
+        if any(x is None for x in (lat1, lon1, lat2, lon2)):
+            raise TypeError("Coordinates cannot be None")
+
+        # 2) Domain check: all lats/lons must be positive in our context
+        if any(v <= 0 for v in (lat1, lon1, lat2, lon2)):
+            raise ValueError(f"Invalid coordinates for distance calculation: {(lat1, lon1, lat2, lon2)}")
+
+        try:
+            return geodesic((lat1, lon1), (lat2, lon2)).km
+        except (ValueError, TypeError) as e:
+            # Re-raise with more descriptive message
+            raise type(e)(f"Invalid coordinates for distance calculation: {e}")
+
+    @staticmethod
+    def add_distance(
+        df: pd.DataFrame,
+        lat: float,
+        lon: float,
+        lat_col: str = "lat",
+        lon_col: str = "lon",
+        new_col: str = "distance_km",
+    ) -> pd.DataFrame:
+        """
+        Return a copy of `df` with a new column `new_col` representing the distance
+        from the fixed point (`lat`, `lon`) to each row's (lat_col, lon_col).
+        """
+        df_copy = df.copy()
+        df_copy[new_col] = df_copy.apply(
+            lambda row: FeatureEngineer.calculate_distance_km(
+                lat, lon, row[lat_col], row[lon_col]
+            ),
+            axis=1,
+        )
+        return df_copy
+
+    @staticmethod
+    def bucket_assoc_size(members: int) -> str:
+        """
+        Bucket a club's member count into 'small', 'medium', or 'large'.
+        """
+        if members < 200:
+            return "small"
+        if members < 1000:
+            return "medium"
+        return "large"
+
+    @staticmethod
+    def calculate_distance(
+        club_coords: pd.DataFrame,
+        comp_coords: pd.DataFrame
+    ) -> pd.Series:
+        """
+        Compute geodesic distance (km) between each club–company pair (row-wise).
+        """
+        if len(club_coords) != len(comp_coords):
+            raise ValueError("Input DataFrames must have the same length")
+
+        distances = [
+            FeatureEngineer.calculate_distance_km(
+                club_coords.iloc[i]["lat"],
+                club_coords.iloc[i]["lon"],
+                comp_coords.iloc[i]["lat"],
+                comp_coords.iloc[i]["lon"],
+            )
+            for i in range(len(club_coords))
+        ]
+        return pd.Series(distances, name="distance_km")
+
+    @staticmethod
+    def calculate_size_match(
+        club_sizes: pd.Series,
+        comp_sizes: pd.Series
+    ) -> pd.Series:
+        """
+        Score size compatibility: exact match → 1.0; adjacent → 0.5; else → 0.0.
+        """
+        size_map = {"small": 0, "medium": 1, "large": 2}
+
+        def _score(cs, ps):
+            a = size_map.get(cs, 0)
+            b = size_map.get(ps, 0)
+            if a == b:
+                return 1.0
+            if abs(a - b) == 1:
+                return 0.5
+            return 0.0
+
+        scores = [_score(c, p) for c, p in zip(club_sizes, comp_sizes)]
+        return pd.Series(scores, name="size_match")
+
+    @staticmethod
+    def calculate_industry_affinity(
+        sport_types: pd.Series,
+        industries: pd.Series
+    ) -> pd.Series:
+        """
+        Calculate industry-sport affinity score (0.0 or 1.0).
+        """
+        def _affinity(sports, industry):
+            if not isinstance(sports, list) or not isinstance(industry, str):
+                return 0.0
+            return 1.0 if any(sp.lower() in industry.lower() for sp in sports) else 0.0
+
+        affinities = [_affinity(s, i) for s, i in zip(sport_types, industries)]
+        return pd.Series(affinities, name="industry_sport_affinity")
+
+    @staticmethod
+    def calculate_growth_rate(
+        companies_df: pd.DataFrame
+    ) -> pd.Series:
+        """
+        Placeholder for company growth rate; returns zeros until time-series data is available.
+        """
+        return pd.Series(0.0, index=companies_df.index, name="growth_rate")
+
+    @staticmethod
+    def urban_rural_compatibility(
+        club_loc: pd.Series,
+        comp_loc: pd.Series
+    ) -> pd.Series:
+        """
+        Binary match if club and company share the same location_type.
+        """
+        compat = [1.0 if cl == cp else 0.0 for cl, cp in zip(club_loc, comp_loc)]
+        return pd.Series(compat, name="urban_rural_match")
+
+    @classmethod
+    def make_pair_features(cls, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create a feature DataFrame for club–company pairs for the matching model.
+
+        Returns features:
+          - distance_km: exact geodesic distance
+          - size_match: size compatibility score
+          - revenue_ksek: raw revenue value (in tkr)
+          - employees: raw employee count
+          - distance_score: exp(-distance_km/50) decay
+        """
+        features: Dict[str, pd.Series] = {}
+
+        # Distance
+        if all(col in df.columns for col in ["club_lat", "club_lon", "company_lat", "company_lon"]):
+            features["distance_km"] = df.apply(
+                lambda r: cls.calculate_distance_km(
+                    r["club_lat"], r["club_lon"],
+                    r["company_lat"], r["company_lon"]
+                ),
+                axis=1
+            )
+
+        # Size compatibility
+        if "club_size" in df.columns and "company_size" in df.columns:
+            features["size_match"] = cls.calculate_size_match(
+                df["club_size"], df["company_size"]
+            )
+
+        # Raw financial and headcount features
+        if "revenue_ksek" in df.columns:
+            features["revenue_ksek"] = df["revenue_ksek"].rename("revenue_ksek")
+        if "employees" in df.columns:
+            features["employees"] = df["employees"].rename("employees")
+
+        # Exponential distance decay
+        if "distance_km" in features:
+            features["distance_score"] = np.exp(-features["distance_km"] / 50)
+
+        return pd.DataFrame(features)
+
+    def create_features(
+        self,
+        clubs_df: pd.DataFrame,
+        companies_df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Build a comprehensive feature set for each club–company pair.
+
+        Returns features including:
+          - distance_km, distance_score
+          - size_match
+          - industry_sport_affinity
+          - revenue_ksek, employees
+          - company_age
+          - growth_rate
+          - urban_rural_match
+        """
+        feats: Dict[str, pd.Series] = {}
+
+        # 1) Distance & decay
+        if {"lat", "lon"}.issubset(clubs_df.columns) and {"lat", "lon"}.issubset(companies_df.columns):
+            club_coords = clubs_df[["lat", "lon"]]
+            comp_coords = companies_df[["lat", "lon"]]
+            feats["distance_km"] = self.calculate_distance(club_coords, comp_coords)
+            feats["distance_score"] = np.exp(-feats["distance_km"] / 50)
+
+        # 2) Size match
+        if "size_bucket" in clubs_df.columns and "size_bucket" in companies_df.columns:
+            feats["size_match"] = self.calculate_size_match(
+                clubs_df["size_bucket"], companies_df["size_bucket"]
+            )
+
+        # 3) Industry affinity
+        if "sport_types" in clubs_df.columns and "industry" in companies_df.columns:
+            feats["industry_sport_affinity"] = self.calculate_industry_affinity(
+                clubs_df["sport_types"], companies_df["industry"]
+            )
+
+        # 4) Raw financial & headcount
+        if "revenue_ksek" in companies_df.columns:
+            feats["revenue_ksek"] = companies_df["revenue_ksek"].rename("revenue_ksek")
+        if "employees" in companies_df.columns:
+            feats["employees"] = companies_df["employees"].rename("employees")
+
+        # 5) Company age
+        if "founded_year" in companies_df.columns:
+            feats["company_age"] = (
+                datetime.now().year - companies_df["founded_year"]
+            ).rename("company_age")
+
+        # 6) Growth rate
+        if "employees" in companies_df.columns:
+            feats["growth_rate"] = self.calculate_growth_rate(companies_df)
+
+        # 7) Urban/rural match
+        if "location_type" in clubs_df.columns and "location_type" in companies_df.columns:
+            feats["urban_rural_match"] = self.urban_rural_compatibility(
+                clubs_df["location_type"], companies_df["location_type"]
+            )
+
+        return pd.DataFrame(feats)
+
+
+================================================================================
+FIL: sponsor_match/models/models.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/models/models.py
+-------------------------------
+Ensemble of ML models for sponsorship probability prediction.
+"""
+
+import logging
+from typing import Any, Dict, Union
+
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingClassifier
+from sklearn.neural_network import MLPRegressor
+import lightgbm as lgb
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+
+class SponsorshipPredictorEnsemble:
+    """
+    Holds a collection of models and provides a unified interface
+    for training and predicting sponsor-match probabilities.
+    """
+
+    def __init__(self) -> None:
+        """
+        Initialize the ensemble with default hyperparameters.
+        """
+        self.models: Dict[str, Any] = {
+            "rf": RandomForestRegressor(n_estimators=100),
+            "gbm": GradientBoostingClassifier(),
+            "lgbm": lgb.LGBMRegressor(),
+            "nn": MLPRegressor(hidden_layer_sizes=(100, 50))
+        }
+        logger.info("Initialized SponsorshipPredictorEnsemble with models: %s",
+                    list(self.models.keys()))
+
+    def train(
+        self,
+        X_train: Union[pd.DataFrame, np.ndarray],
+        y_train: Union[pd.Series, np.ndarray]
+    ) -> None:
+        """
+        Fit each model in the ensemble on the training data.
+
+        Parameters
+        ----------
+        X_train : DataFrame or ndarray
+            Feature matrix.
+        y_train : Series or ndarray
+            Binary labels (1 = sponsored before, 0 = not).
+        """
+        for name, model in self.models.items():
+            logger.info("Training model '%s'", name)
+            model.fit(X_train, y_train)
+        logger.info("All models trained successfully")
+
+    def predict_proba(
+        self,
+        X: Union[pd.DataFrame, np.ndarray]
+    ) -> np.ndarray:
+        """
+        Return the average predicted probability of sponsorship
+        across all models in the ensemble.
+
+        Parameters
+        ----------
+        X : DataFrame or ndarray
+            Feature matrix.
+
+        Returns
+        -------
+        ndarray
+            Array of probabilities, one per row in X.
+        """
+        prob_list = []
+        for name, model in self.models.items():
+            if hasattr(model, "predict_proba"):
+                probs = model.predict_proba(X)[:, 1]
+                logger.debug("Model '%s' provided predict_proba output", name)
+            else:
+                # fallback: normalize regression output into [0,1]
+                raw = model.predict(X)
+                min_, max_ = raw.min(), raw.max()
+                if max_ - min_ > 1e-8:
+                    probs = (raw - min_) / (max_ - min_)
+                else:
+                    probs = np.zeros_like(raw)
+                logger.debug("Model '%s' provided normalized regression output", name)
+            prob_list.append(probs)
+
+        # Ensemble by averaging
+        ensemble_probs = np.mean(prob_list, axis=0)
+        logger.info("Ensembled probabilities computed (shape=%s)", ensemble_probs.shape)
+        return ensemble_probs
+
+
+================================================================================
+FIL: sponsor_match/data/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: sponsor_match/data/ingest_associations.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/data/ingest_associations.py
+
+Reads an enriched associations CSV and ingests it into the MySQL database.
+"""
+
+import argparse
+import logging
+from pathlib import Path
+
+import pandas as pd
+from sqlalchemy.exc import SQLAlchemyError
+from sponsor_match.core.db import get_engine
+from dotenv import load_dotenv
+
+def init_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s"
+    )
+
+def ingest(csv_path: Path):
+    """
+    Load the CSV at csv_path into the `associations` table.
+    Replaces any existing data in `associations`.
+    """
+    if not csv_path.exists():
+        logging.error(f"CSV file not found: {csv_path}")
+        return
+
+    try:
+        df = pd.read_csv(csv_path)
+        logging.info(f"Loaded {len(df)} rows from {csv_path}")
+    except Exception as e:
+        logging.error(f"Failed to read CSV {csv_path}: {e}")
+        return
+
+    engine = get_engine()
+    try:
+        with engine.begin() as conn:
+            df.to_sql(
+                name="associations",
+                con=conn,
+                if_exists="replace",
+                index=False,
+                method="multi",      # batch inserts if available
+            )
+        logging.info(f"Successfully wrote {len(df)} rows to `associations` table.")
+    except SQLAlchemyError as e:
+        logging.error(f"Database error during ingest: {e}")
+    except Exception as e:
+        logging.error(f"Unexpected error during ingest: {e}")
+
+def main():
+    load_dotenv()    # ensure .env credentials are loaded
+    init_logging()
+
+    parser = argparse.ArgumentParser(
+        description="Ingest enriched associations CSV into MySQL `associations` table"
+    )
+    parser.add_argument(
+        "--csv-path",
+        type=Path,
+        default=Path("data") / "associations_goteborg_with_coords.csv",
+        help="Path to the enriched associations CSV file",
+    )
+    args = parser.parse_args()
+    ingest(args.csv_path)
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: sponsor_match/data/ingest_companies.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+sponsor_match/data/ingest_companies.py
+-----------------------------------------
+Read data/bolag_1_500_with_coords.csv (already geocoded) and load into companies table.
+"""
+
+import sys
+import logging
+from pathlib import Path
+import pandas as pd
+from sqlalchemy import text
+from sponsor_match.core.db import get_engine
+
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+
+def main() -> None:
+    # Use the already geocoded file
+    project_root = Path(__file__).resolve().parents[2]
+    csv_path = project_root / "data" / "bolag_1_500_with_coords.csv"
+
+    # Read the geocoded file
+    try:
+        df = pd.read_csv(csv_path, encoding="utf-8")
+        logger.info("Loaded %d rows from %s", len(df), csv_path)
+    except FileNotFoundError:
+        logger.error("CSV not found at %s", csv_path)
+        sys.exit(1)
+    except Exception as e:
+        logger.exception("Unexpected read error: %s", e)
+        sys.exit(1)
+
+    # Rename columns to match database schema
+    df = df.rename(columns={
+        "Företagsnamn": "name",
+        "Postadress": "address",
+        "Omsättning (tkr)": "revenue_ksek",
+        "Anställda": "employees",
+        "År": "year",
+    })
+
+    # Calculate size bucket based on revenue
+    def calculate_size_bucket(revenue_ksek):
+        if pd.isna(revenue_ksek):
+            return "medium"
+        revenue_sek = revenue_ksek * 1000
+        if revenue_sek < 5_000_000:
+            return "small"
+        elif revenue_sek < 50_000_000:
+            return "medium"
+        else:
+            return "large"
+
+    df["size_bucket"] = df["revenue_ksek"].apply(calculate_size_bucket)
+
+    # Add default industry and orgnr to match database schema
+    df["industry"] = "Other"
+    df["orgnr"] = None  # No organization numbers in our data
+
+    # Select final columns matching database schema
+    final_columns = ["orgnr", "name", "revenue_ksek", "employees", "year", "size_bucket", "industry", "lat", "lon"]
+    df = df[final_columns]
+
+    # Drop rows with missing coordinates
+    before_count = len(df)
+    df = df.dropna(subset=["lat", "lon"])
+    after_count = len(df)
+    if before_count > after_count:
+        logger.warning("Dropped %d rows with missing coordinates", before_count - after_count)
+
+    # Write to database
+    engine = get_engine()
+
+    try:
+        with engine.begin() as conn:
+            # Clear existing data and insert new
+            conn.execute(text("DELETE FROM companies"))
+            df.to_sql("companies", conn, if_exists="append", index=False)
+
+            new_count = conn.execute(text("SELECT COUNT(*) FROM companies")).scalar() or 0
+            logger.info("✅ Companies ingestion complete. Total rows: %d", new_count)
+
+    except Exception as e:
+        logger.exception("DB error during ingest: %s", e)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
+
+================================================================================
+FIL: utils/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: utils/check_db.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+utils/check_db.py
+
+Utility to verify database connectivity and inspect tables.
+"""
+
+import logging
+import sys
+from dotenv import load_dotenv
+from sqlalchemy import inspect
+from sponsor_match.core.db import get_engine
+
+def main():
+    # Load environment variables (e.g. DATABASE_URL)
+    load_dotenv()
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s"
+    )
+
+    # Create/get the SQLAlchemy engine
+    try:
+        engine = get_engine()
+    except RuntimeError as e:
+        logging.error(f"Could not create database engine: {e}")
+        sys.exit(1)
+
+    # Inspect the database
+    inspector = inspect(engine)
+    tables = inspector.get_table_names()
+    if not tables:
+        logging.warning("No tables found in the database.")
+        return
+
+    logging.info(f"Found tables: {tables}")
+
+    # For each table, count rows
+    for table in tables:
+        try:
+            with engine.connect() as conn:
+                result = conn.execute(f"SELECT COUNT(*) FROM {table}")
+                count = result.scalar()
+            logging.info(f"Table '{table}' has {count} records.")
+        except Exception as e:
+            logging.error(f"Error querying table '{table}': {e}")
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: utils/list_project_files.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+utils/list_project_files.py
+----------------------
+Recursively scans the entire project root (one level up from this script), skips
+directories .venv and .venv312 as well as __pycache__ and .git, and writes
+out both filenames and entire contents for file types:
+.py, .csv, .json, .toml, .md and .yml
+
+Now creates four separate dump files to split the content evenly.
+
+Usage:
+    cd /home/user/SponsorMatchAI
+    python utils/list_project_files.py [--output-prefix CUSTOM_PREFIX]
+
+Output:
+    utils_output/project_dump_part1.txt through utils_output/project_dump_part4.txt (default)
+"""
+
+import argparse
+import logging
+import os
+from pathlib import Path
+from typing import List, Set
+
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+EXCLUDE_DIRS = {'.venv', '.venv312', '__pycache__', '.git'}
+EXCLUDE_FILES = {
+    'data/bolag_1_500_sorted_with_year.csv',
+    'data/associations_goteborg.csv',
+    'data/associations_goteborg_with_coords.csv',
+    'data/gothenburg_companies_addresses.csv'
+}
+EXCLUDE_FILENAMES = {'bolag_1_500_with_coords.csv'}
+
+
+def collect_files(root: Path, exts: List[str], exclude_files: Set[str], exclude_filenames: Set[str]) -> List[Path]:
+    """
+    Go through root and all subdirectories, collect files with suffixes in exts,
+    skip EXCLUDE_DIRS, exclude_files, and exclude_filenames, and return a list of file paths.
+    """
+    collected_files = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Exclude unwanted directories
+        dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS]
+        for fn in sorted(filenames):
+            # Skip files with excluded filenames
+            if fn in exclude_filenames:
+                logger.info(f"Excluding file by name: {fn} in {dirpath}")
+                continue
+
+            if any(fn.lower().endswith(ext) for ext in exts):
+                file_path = Path(dirpath) / fn
+                rel_path = str(file_path.relative_to(root))
+
+                # Skip excluded files by path
+                if rel_path in exclude_files:
+                    logger.info(f"Excluding file by path: {rel_path}")
+                    continue
+
+                collected_files.append(file_path)
+    return collected_files
+
+
+def write_files_to_dump(files: List[Path], root: Path, out_path: Path) -> None:
+    """
+    Write the given files to the output dump file.
+    """
+    with out_path.open("w", encoding="utf-8") as f:
+        for file_path in files:
+            f.write("=" * 80 + "\n")
+            f.write(f"FIL: {file_path.relative_to(root)}\n")
+            f.write("=" * 80 + "\n\n")
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                f.write(content)
+            except Exception as e:
+                f.write(f"<Could not read file: {e}>\n")
+            f.write("\n\n")
+    size_kb = out_path.stat().st_size / 1024
+    logger.info("Created dump file %s (%.1f KB)", out_path, size_kb)
+
+
+def split_into_four_parts(files: List[Path]) -> List[List[Path]]:
+    """
+    Split the list of files into four approximately equal parts.
+    """
+    file_count = len(files)
+    quarter = file_count // 4
+
+    # Handle case where file count doesn't divide evenly by 4
+    # by distributing remainder to first parts
+    remainder = file_count % 4
+
+    # Calculate lengths for each part
+    lengths = [quarter + (1 if i < remainder else 0) for i in range(4)]
+
+    # Create the parts
+    result = []
+    start_idx = 0
+    for length in lengths:
+        end_idx = start_idx + length
+        result.append(files[start_idx:end_idx])
+        start_idx = end_idx
+
+    return result
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Create four dump files of important project files with full content."
+    )
+    parser.add_argument(
+        "--output-prefix", "-o",
+        type=str,
+        default=None,
+        help="Output file prefix (default: utils_output/project_dump)"
+    )
+    args = parser.parse_args()
+
+    # Since we're now in utils/ directory, need to get the project root (one level up)
+    project_root = Path(__file__).parent.parent
+
+    # Create utils_output directory if it doesn't exist
+    outputs_dir = project_root / "utils_output"
+    outputs_dir.mkdir(exist_ok=True)
+
+    # Set default output prefix if not specified
+    output_prefix = args.output_prefix if args.output_prefix else outputs_dir / "project_dump"
+
+    extensions = [".py", ".csv", ".json", ".toml", ".md", ".yml"]
+    logger.info("Scanning %s for %s files...", project_root, extensions)
+
+    # Collect all relevant files, excluding specific files
+    all_files = collect_files(project_root, extensions, EXCLUDE_FILES, EXCLUDE_FILENAMES)
+    logger.info("Found %d files to include in dumps", len(all_files))
+
+    # Split files into four groups
+    file_parts = split_into_four_parts(all_files)
+
+    # Write each group to a separate dump file
+    for i, files_part in enumerate(file_parts, 1):
+        output_path = Path(f"{output_prefix}_part{i}.txt")
+        write_files_to_dump(files_part, project_root, output_path)
+        logger.info("Part %d contains %d files", i, len(files_part))
+
+    logger.info("Created four dump files with prefix: %s", output_prefix)
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: .pytest_cache/README.md
+================================================================================
+
+# pytest cache directory #
+
+This directory contains data from the pytest's cache plugin,
+which provides the `--lf` and `--ff` options, as well as the `cache` fixture.
+
+**Do not** commit this to version control.
+
+See [the docs](https://docs.pytest.org/en/stable/how-to/cache.html) for more information.
+
+
+================================================================================
+FIL: data/gothenburg_associations.csv
+================================================================================
+
+,,Namn,För. Nr,Adress,Co Adress,Post Nr,,Postort,Kommun,Epostadress,,Hemsida
+,,Afganska Göteborg FF,55754,Blåsvädersgatan,Mahdi Khodadad,41832,,Göteborg,Göteborg,mahdi322.mk47@gmail.com,,
+,,Ahlafors IF,1019,Box 3002,,44914,,ALAFORS,Ale,kansliet@ahlaforsif.se,,www.ahlaforsif.se
+,,AIF Göteborg,1088,Kungsladugårdsgatan 100,Lars Wingfors,41476,,GÖTEBORG,Göteborg,AIF.Goteborg@gmail.com,,
+,,Alealiber IF,54781,Ahrenbergsgatan 27,Cecilia Jansson,416 73,,Göteborg,Göteborg,alealiberif@outlook.com,,https://www.svenskalag.se/alealiberif
+,,Angered BK,53795,Knattens väg 12,,424 32,,Angered,Göteborg,abbas@gunnilseis.se; idris.abdi@gunnilseis.se; kansli@gunnilseis.se; husyusu@live.se,,https://www.angeredallians.se
+,,Angered MBIK,8390,Svarte Filips gata 10,,42444,,ANGERED,Göteborg,angeredmbik@gmail.com; husyusu@live.se,,www.svenskalag.se/angeredmbik
+,,Angered SK,52246,BOX 36,,424 21,,Angered,Göteborg,angeredsk@gmail.com,,svenskalag.se/angeredsk
+,,Angereds IS,31137,Högaffelgatan 15,,424,,Angered,Göteborg,viktor.kirsby@angeredsis.com,,angeredsis.com
+,,Annedal FF,54158,Nilssonsberg 31,,41143,,Göteborg,Göteborg,annedalff@hotmail.com,,
+,,Apollon FF Göteborg ,56645,Våmmedalsvägen 8,,42831,,Kållered,Göteborg,amaertotelioses@gmail.com,,
+,,Askims IK,1113,Box 9120,Stora Åvägen 1,40093,,GÖTEBORG,Göteborg,info@askimsik.se,,www.askimsik.se
+,,Assyriska BK,8350,Diamantgatan 1,,42150,,VÄSTRA FRÖLUNDA,Göteborg,assyriska.bk@mail.com,,https://www.laget.se/AssyriskaBK
+,,Athletic FC Angered ,56528,Kalendervägen 16,Hussein Yusuf Abdi,41534,,GÖTEBORG,Göteborg,afcangered@gmail.com,,w
+,,Atletico Göteborg FC ,55193,"Danska vägen 88, Göteborg",,416 59,,Göteborg,Göteborg,ts.samuelsson@hotmail.com,,
+,,Azalea BK,27680,Ekedalsgatan 20,Majvallen,41468,,GÖTEBORG,Göteborg,kansli@azaleabk.se,,http://www.azaleabk.se
+,,Backatorp IF,32492,, ,42247,,Hisings Backa,Göteborg,kansliet@backatorpif.se,,www.backatorpif.se
+,,Balltorps FF,24821,Gundefjällsgatan 115,Jonas Werley,43150,,Mölndal,Mölndal,joel@i-store.se,,www.laget.se/balltorpsff
+,,Bellevue City FK ,56477,Karl Gustavsgatan 53,,41131,,Göteborg,Göteborg,tom_engvall@hotmail.com,,
+,,Bergsjö IF,1168,"Sjustjärnan, Bergsjövallen",,415 51,,GÖTEBORG,Göteborg,bergsjoifgbg@outlook.com,,www.laget.se/bergsjo_if
+,,Bergums IF,1172,Bergumsvallen,,42470,,OLOFSTORP,Göteborg,bergumsif@gmail.com,,Laget.se/bergumsif
+,,Bjurslätts IF,1192,Hällskriftsgatan 3,,41726,,GÖTEBORG,Göteborg,info@bjurslatt.se,,http://www.bjurslatt.com
+,,Björndammens BK,8304,Grenvägen 3,Christer Grahn,43347,,PARTILLE,Partille,kansli@bjorndammensbk.se,,www.bjorndammensbk.se
+,,BK Bifrost,8301,BK Bifrost ,Karin Larsson,431 44,,MÖLNDAL,Mölndal,fana_hunegnaw@hotmail.com; kassor@bkbifrost.se,,www.bkbifrost.se
+,,BK Björkåsen,1584,Nolängsvägen 12,Curt Bryngelsson,424 55,,Angered,Göteborg,cbryngel@gmail.com,,http://www.laget.se/bjorkasen
+,,BK Häcken,2126,Entreprenadvägen 6,,417 05,,GÖTEBORG,Göteborg,kansli@bkhacken.se; kansliungdom@bkhacken.se; anders.wahrnberg@bkhacken.se,,https://bkhacken.se/
+,,BK Häcken FF,8378,Entreprenadvägen 6,,417 05,,Göteborg,Göteborg,kansli@bkhacken.se; kansliungdom@bkhacken.se; anders.wahrnberg@bkhacken.se; tomas.andersson@bkhacken.se,,https://bkhacken.se/
+,,BK S:t Jakob,34967,Parkgatan 4,,41138,,GÖTEBORG,Göteborg,Robertolans@hotmail.com,,svenskalag.se/bkjakob
+,,BK Skottfint,35610,Verkmästaregatan 2,Daniel Åman,41757,,GÖTEBORG,Göteborg,fogis@skottfint.nu,,http://www.skottfint.nu
+,,Brämaregårdens FC,45892,Blidvädersplan,,418 30,,Göteborg,Göteborg,bramaregarden@hotmail.com,,svenskalag.se/bfc
+,,Chalmers Studentkårs IS,51319,Teknologgården 2,,412 58,,Göteborg,Göteborg,carl.kieksi@cis-chalmers.se,,
+,,Club América FF,54448,Sommarvädersgatan 18-1201,Mike Ramirez,41833,,Göteborg,Göteborg,club.america.ff@outlook.com,,https://www.svenskalag.se/clubamericaff
+,,Croatia Göteborg,8314,Kortedala Idrottsväg 15,,41511,,GÖTEBORG,Göteborg,ante.lijic@seb.se; ervin.gulin@hotmail.com,,https://www.laget.se/CROATIAGOTEBORG/
+,,Dalen/Krokslätts FF,8315,Krokslätts Storgata 44,,431 38,,MÖLNDAL,Mölndal,dalenkff@gmail.com,,www.laget.se/DalenKFF_
+,,Diseröd SK,44736,ULVEGÄRDEGATAN 49,DANIEL BROMAN,44243,,KUNGÄLV,Kungälv,dskfotboll@live.se,,http://www.svenskalag.se/diserodsk
+,,Donsö IS,8316,Lurkenvägen 2,,43082,,DONSÖ,Göteborg,Anders.backman@siriusshipping.eu ; jbe.taxi@telia.com,,http://www.laget.se/Donsois1
+,,Elisedals IS,1480,Löparegatan 2,,416 69,,GÖTEBORG,Göteborg,elisedals_is@hotmail.com,,http://www.laget.se/elisedalsis
+,,Eriksbergs IF,8319,Danagatan 16,Reine Lindmark,41876,,GÖTEBORG,Göteborg,eriksberg.fotboll@telia.com,,
+,,Espanyol Göteborg IF ,54985,Trädesgatan 5A ,,41505,,Göteborg,Göteborg,ernesto@rcdespanyolacademy.se; goteborg@rcdespanyolacademy.se,,
+,,FC Fyrklövern,67139,Fyrklöversgatan,,41721,,Göteborg,Göteborg,fcfyrklovern2020@gmail.com,,
+,,FC Heden,44670,Johannas väg 26,Tobias Larsson,42542,,Göteborg,Göteborg,fcheden@hotmail.com,,www.laget.se/fcheden
+,,FC Härlanda,45280,Lilla Korsåsgatan 28,Sebatian Malcus,421 47,,Västra Frölunda,Göteborg,jonatan_hellman@hotmail.com,,
+,,FC Komarken,40883,Kongahällagatan 34 A,,442 38,,KUNGÄLV,Kungälv,fckomarken@gmail.com,,http://www.laget.se/fc-komarken
+,,FC Kålltorp ,54962,Björcksgatan 11,"Ulf Jörnvik, FC Kålltorp",41652,,Göteborg,Göteborg,mikael.ok.olsson@gmail.com,,
+,,FC Ljiljan Göteborg,52848,Ekspinnarevägen 19,Haris Avdic,43531,,Mölnlycke,Härryda,avdicharis@yahoo.se,,https://www.svenskalag.se/fcljiljan
+,,FC Majorna,43869,Bangatan 23,Okinedo,41463,,Göteborg,Göteborg,jaykadir86@gmail.com,,laget.se/FCmajorna
+,,Finlandia Pallo AIF,26254,Hinnebäcksgatan,,417 45,,GÖTEBORG,Göteborg,info@finpa.se,,www.finpa.se
+,,Floda BoIF,1620,Skallsjö Prästväg 12,,448 31,,FLODA,Lerum,kansliet@flodaboif.se,,http://www.flodaboif.se
+,,Fotö GoIF,8323,Dörjevägen 18,Maria Zackrisson,47545,,Fotö,Öckerö,Rasmuszackrisson@gmail.com,,www.laget.se/fgif
+,,Framtida Idrottsförening ,55962,"Markurellgatan 24, lgh 1102",Osman Cabdisamad Cismaan,422 52,,Hisings Backa,Göteborg,osman.cismaan93@gmail.com,,
+,,Fröjdens FK,51007,Mölndalsvägen 87D,Philip Franzén,41284,,Göteborg,Göteborg,frojdensfk@hotmail.com,,http://www.laget.se/frojdensfk
+,,Fässbergs IF,8328,Idrottsvägen 3,,43162,,MÖLNDAL,Mölndal,kansli@fassbergsif.se; fogis@fassbergsif.se; klubbchef@fassbergsif.se; ordforande@fassbergsif.se,,www.fassbergsif.se
+,,GAIS,8338,Gamla Boråsvägen 75,,41276,,GÖTEBORG,Göteborg,info@gais.se; magnus.skoldmark@gais.se,,www.gais.se
+,,GAIS Futsal,51600,Årsringagatan 50,Fredrik Ritter,431 51,,Mölndal,Göteborg,fredrik@gotrev.se,,www.gaisfutsal.com
+,,Galacticos FC,66921,Galileis Gata 13,Sadaq Bashir,41554,,Göteborg,Göteborg,galacticos.bergsjon@gmail.com,,
+,,Gambian Mix IF,54183,Inägogatan 23C,Mustapha Minteh,41784,,Göteborg ,Göteborg,baltimore83@hotmail.com,,
+,,Gamlestaden FF,51497,Eklövsvägen 216,Christian Brile,443 50,,Lerum,Göteborg,christian.brile@gmail.com,,www.gamlestadenff.se
+,,Gatans Lag FF,45770,Härlanda Park 6B,Qviding FIF,41652,,Göteborg,Göteborg,info@gatanslag.se; felizia@gatanslag.se,,www.gatanslag.se
+,,GoldCoast FC,54766,Tellusgatan 8 lgh 452,Gilbert Mensah,41568,,GÖTEBORG ,Göteborg,gold.coast.fc.gbg@gmail.com,,https://www.svenskalag.se/goldcoastfc
+,,Gothenburg Celtic FC,43913,Haga Östergata 18,Florent Schildknecht,41301,,Göteborg,Göteborg,gothenburgceltic@gmail.com,,www.gothenburgceltic.com
+,,Grunden BOIS,38306,Krutvägen 4,Prioritet Serneke Arena,415 28,,GÖTEBORG,Göteborg,thor@grundenbois.com,,http://www.grundenbois.com
+,,Guldhedens IK,1835,Dr. Heymans gata 1F,,41322,,GÖTEBORG,Göteborg,kansli@guldhedensik.se; fotbollsansvarig@guldhedensik.se; ungdomsfotboll@guldhedensik.se,,https://www.guldhedensik.se
+,,Gunnared KIF,50945,Gunnaredsvallen 4,,42466,,Angered,Göteborg,gunnaredkif@outlook.com ,,www.svenskalag.se/gunnaredkif
+,,Gunnilse IS,1850,Knattens Väg 12,,424 32,,ANGERED,Göteborg,kansli@gunnilseis.se; Bjorn@gunnilseis.se; gunilla@gunnilseis.se; idris.abdi@gunnilseis.se; abbas@gunnilseis.se,,http://www.gunnilseis.se
+,,Gårda BK,8333,Katrinebergsgatan 4B,Näsström,43161,,Mölndal,Göteborg,gardabk1919@gmail.com,,www.svenskalag.se/gardabk
+,,Gårdsten FC,56525,Muskotgatan 32,,42441,,Angered,Göteborg,Gardstenfc@gmail.com,,
+,,Götafors BK ,56552,Bifrostgatan 48E,,43144,,Mölndal,Mölndal,gotaforsbk@outlook.com,,
+,,Götaholms BK,8335,Ambrosiusgatan 2,Brandströmska skolan,41517,,GÖTEBORG,Göteborg,info.gotaholm@gmail.com,,http://www.gotaholm.se
+,,Göteborgs City FF,40858,Norra Krokslättsgatan 13,Hultberg,41264,,Göteborg,Göteborg,goteborgscityff@gmail.com,,https://www.instagram.com/goteborgscityff/
+,,Göteborgs FF,1895,Ekedalsgatan 20,Majvallen,414 68,,GÖTEBORG,Göteborg,gff@gff1897.se,,http://www.svenskalag.se/gff1897
+,,Göteborgs SIF,1907,Gibraltargatan 39-41,Idrottshallen Fysiken,41279,,GÖTEBORG,Göteborg,styrelsen@gsif.se,,http://gsif.se/
+,,Hammarkullens BK,50653,Fjäderharvsgatan 115,Christian Winnicki,42466,,Angered,Göteborg,Yaaquub.hkbk@gmail.com,,
+,,Hermansby IF,2014,Lyckevägen 19,,442 70,,KÄRNA,Kungälv,kansli@hermansbyif.se,,www.hermansbyif.se
+,,Hira IK,54926,Rimfrostgatan 113,Abedin Belaj,418 40,,Göteborg,Göteborg,,,
+,,Hisingsbacka FC,2031,Box 4187,,42204,,HISINGS BACKA,Göteborg,kansli@hbfc.se,,http://www.hbfc.se
+,,Hjuviks AIK,21414,Torslanda Hästeviksväg 59,,42341,,Torslanda,Göteborg,hjuviksaik@hotmail.com,,https://hjuviksaik.myclub.se/
+,,Hovås Billdal IF,2075,Box 2004,,436 02,,HOVÅS,Göteborg,nina@hovasbilldal.se; peter@hovasbilldal.se ,,http://www.hovasbilldal.se
+,,Hålta IK,2124,Matskärsvägen 88,Tony Tenvid,442 75,,LYCKE,Kungälv,fotboll@haltaik.se,,www.haltaik.se
+,,Hällesåker IF,8353,Raneredsvägen 5,,437 92,,LINDOME,Mölndal,info@hallesakerif.nu; jesper.loenn@gmail.com,,www.hallesakerif.nu
+,,Hälsö BK,2150,Box 256,,47512,,HÄLSÖ,Öckerö,lisa.pettersson@live.se,,www.halsobk.se
+,,Härryda IF,2159,Lerdalsvägen 1,,43892,,HÄRRYDA,Härryda,harrydaif@hotmail.com; Albin.030414@gmail.com; Bako.lofgren@harryda.se,,www.laget.se/harrydaif
+,,Högaborg Käringön FC,31890,Stampgatan 64 Lgh 1702,Torsten Landergren,41101,,GÖTEBORG,Göteborg,info@hkfc.se,,http://www.hkfc.se
+,,Högsbo FF ,66945,Golfstigen 5,,43650,,Hovås,Göteborg,hogsboff@gmail.com,,
+,,Hönö IS,2197,Lindblomsvägen 30,,475 42,,HÖNÖ,Öckerö,Ordforande@honois.se,,www.laget.se/honois
+,,IF Mölndal Fotboll,8395,Idrottsvägen 5,,43162,,MÖLNDAL,Mölndal,mail@molndalfotboll.com,,http://www.molndalfotboll.com
+,,IF Vardar/Makedonija,4328,"Klubbhuset, Generatorsplan",,41705,,GÖTEBORG,Göteborg,Ifvardarmakedonija@gmail.com,,https://www.svenskalag.se/IFVardarMakedonija
+,,IF Warta,4547,Södra Sälöfjordsgatan 29,,41873,,GÖTEBORG,Göteborg,fuifwarta@gmail.com,,ifwarta.se
+,,IF Väster,4503,Box 206,,421 22,,Västra Frölunda,Göteborg,info@ifvaster.com,,http://www.ifvaster.com
+,,IFK Björkö,2236,Ekvägen 4,Malin Sandström,475 37,,BOHUS-BJÖRKÖ,Öckerö,epost@ifkbjorko.nu,,http://www.ifkbjorko.nu
+,,IFK Göteborg,2250,Kamratgårdsvägen 50,,41655,,GÖTEBORG,Göteborg,info@ifkgoteborg.se,,www.ifkgoteborg.se
+,,IFK Göteborg Futsal,40671,Kvibergs Port 6,,41527,,Göteborg,Göteborg,info@ifkgoteborgfutsal.se,,www.ifkgoteborgfutsal.se
+,,IFK Hindås,2255,Sportvägen 9,,43898,,HINDÅS,Härryda,kansli@ifkhindas.se,,www.ifkhindas.com
+,,IFK Hällingsjö,8357,Björkängsvägen 3,,43896,,HÄLLINGSJÖ,Härryda,sebastian.valenzuela@live.se,,http://www.ifkhallingsjo.se/
+,,IK Kongahälla,8372,Karebyvägen 4,,442 42,,KUNGÄLV,Kungälv,linus.carlstrom@ikkongahalla.com; tanja.ivanova@ikkongahalla.com; johan.lindberg@ikkongahalla.com; ikkongahalla1906@gmail.com,,www.ikkongahalla.com
+,,IK Surd,3919,Eklanda Hage 143b,,43149,,GÖTEBORG,Göteborg,nslattman@gmail.com,,www.iksurd.se
+,,IK Virgo,25892,Ljungbackegatan 1b,Röda klubbstugan längst ner på gatan,412 59,,GÖTEBORG,Göteborg,kansli@ikvirgo.se,,http://www.ikvirgo.se
+,,IK Zenith,4573,Zenithgården,,42355,,TORSLANDA,Göteborg,kansliet@ikzenith.se; robert.niklasson@ikzenith.se,,http://www.ikzenith.se/
+,,IK Zenith FF,66977,Zenithgården 1,,42355,,Torslanda,Göteborg,kansliet@ikzenith.se,,http://www.ikzenith.se
+,,Inter Göteborg IF,52864,Släpharvsgatan 5C,,43147,,Mölndal,Göteborg,Intergif@outlook.com,,www.svenskalag.se/intergif
+,,Jitex BK,31889,Idrottsvägen,,43162,,MÖLNDAL,Mölndal,info@jitex.se,,www.jitex.se
+,,Johannebergs IF,23732,Sagogången 42,Rino Wiger,42245,,Hisingsbacka,Göteborg,rino.wiger@gmail.com,,https://www.svenskalag.se/johannebergsif
+,,Jonsereds IF,8365,Jons Väg 23,,433 75,,JONSERED,Partille,kansli@jonseredsif.se,,http://www.jonseredsif.se/
+,,Järnbrotts IF,8366,Musikvägen 42,Reine Tilly,421 39,,VÄSTRA FRÖLUNDA,Göteborg,jarnbrottsif@gmail.com,,www.laget.se/JARNBROTT
+,,Kalvsunds IF,8367,Gamla vägen 19,,475 36,,KALVSUND,Öckerö,info@kalvsundsif.se,,www.laget.se/kalvsundsif
+,,Kareby IS,2482,Hagenvägen 73,,442 46,,KAREBY,Kungälv,fotboll@kareby.com,,http://www.kareby.com
+,,KF Velebit,4353,Box 22033,,40072,,GÖTEBORG,Göteborg,info@velebit.se,,http://www.velebit.se
+,,KIF Bosna Ljiljan,29934,Temperaturgatan 80,,41841,,GÖTEBORG,Göteborg,sejad.dz@gmail.com,, www.laget.se/BOSNAIFGBG/15160-start.html
+,,Knippla IK,8370,Box 76,,47513,,KÄLLÖ-KNIPPLA,Öckerö,fredrik.lindegren@volvocars.com; ulf@kik.nu,,www.kik.nu
+,,Kode IF,2590,Släbo 120,,44296,,KODE,Kungälv,kode.if@telia.com,,https://www.svenskalag.se/kodeif
+,,Kortedala IK,56005,Julaftonsgatan 58,,415 44,,Göteborg,Göteborg,kansli.kortedalaik@yahoo.com,,
+,,Kungsladugårds BK,2656,Apelsingatan 4,,42654,,VÄSTRA FRÖLUNDA,Göteborg,info@kungsladugardsbk.se; marcus.angelin@kungsladugardsbk.se,,www.kungsladugardsbk.se
+,,Kungälvs FF,24814,Box 397,,44211,,KUNGÄLV,Kungälv,info@kungalvsff.se; ordforande@kungalvsff.se,,kungalvsff.web.sportadmin.se
+,,Kviberg FF ,67165,Allhelgonagatan 19,Mohamed Abdiaziz Adan,41545,,Göteborg,Göteborg,vladimir.karanovic@icloud.com,,https://www.svenskalag.se/kvibergff
+,,Kållered SK,2687,Tulebovägen 17,,42834,,KÅLLERED,Mölndal,fotboll@kalleredsk.se; planbokningksk@gmail.com,,http://www.kalleredsk.se
+,,Kärra Dragons FC,52050,Båtsman Lustigs gata 64,Therese Källberg,42257,,HisingsBacka,Göteborg,varberg2000@hotmail.com; matijevicdarko@hotmail.com,,
+,,Kärra KIF,2697,Burmans gata 3,,425 33,,HISINGS KÄRRA,Göteborg,info@karrakif.se,,www.karrakif.se
+,,Landala IF,33221,Gibraltargatan 37,,41279,,GÖTEBORG,Göteborg,landalaif@gmail.com,,www.landalaif.com
+,,Landvetter IF 2003,38193,Tahultsvägen 60,,438 35,,LANDVETTER,Härryda,info@landvetterif.se ;jonas.andersson@landvetterif.se,,http://www.landvetterif.se
+,,Landvetter IS,2727,Tahultsvägen 60,,438 35,,LANDVETTER,Härryda,landvetter.is@telia.com,,http://landvetteris.com
+,,Lekstorps IF,2748,Kumminvägen 1,Cathrine Svensson,443 70,,GRÅBO,Lerum,kansli@lekstorpsif.se,,www.lekstorpsif.se
+,,Lerums IS,2755,Idrottsvägen 2,,443 31,,LERUM,Lerum,ninos@lerumsis.se; ,,www.lerumsis.se
+,,Lindholmens BK,8381,Björcksgatan 52 C,Larry Hedlund,416 52,,GÖTEBORG,Göteborg,larry.hedlund@infranord.se,,
+,,Lindome GIF,2798,Hällesåkersvägen 5,,43791,,LINDOME,Mölndal,info@lindomegif.se,,www.lindomegif.se
+,,Lundby IF,40097,Munkedalsgatan 10,,41716,,GÖTEBORG,Göteborg,info@lundbyif.se,,www.lundbyif.se
+,,Lunden Överås BK,2866,Wrangelsgatan 5 c,Egon Hansen,416 62,,GÖTEBORG,Göteborg,kansli@lundenobk.se,,www.lundenobk.se
+,,Låtta Marta IF,44620,Ängskogsvägen 10 A,Anna Johansson,41743,,GÖTEBORG,Göteborg,l8marta@hotmail.se,,www.svenskalag.se/l8martaif
+,,Marockanska Göteborg FF,66782,Lilliegatan 10,Amir Berzouami,41657,,Göteborg,,marockanskagoteborgff@gmail.com,,svenskalag.se/marockanskagoteborgff
+,,Marstrands BK,54952,Täljstensgatan 7,,44254,,Ytterby,Kungälv,,,
+,,Marstrands IS,53369,Nygatan 40,,44266,,Marstrand,Kungälv,,,
+,,Masthuggets BK,2981,Fjällgatan 27,,41317,,GÖTEBORG,Göteborg,info@masthugget.com,,http://www.masthugget.com
+,,Menisken IF,8392,Radiofyrsgatan 5,Johan Anäng,42133,,Västra Frölunda,Göteborg,johan@teamtastic.se,,http://www.menisken.se
+,,Mossens BK,8393,Gibraltargatan 37,,41279,,GÖTEBORG,Göteborg,kansli@mossensbk.se,,http://www.mossensbk.se
+,,Mölndal United FC,56105,Stenbrogatan 3E,,43162,,Mölndal,Mölndal,infmufc@gmail.com,,
+,,Mölnlycke IF,3070,Box 1,,43521,,MÖLNLYCKE,Härryda,kansli@molnlyckeif.se; anders.dahlstedt@molnlyckeif.se,,www.molnlyckeif.se
+,,Mölnlycke IS Ungdom ,66925,Azaleavägen 4,Daniel Berntsson,43537,,Mölnlycke,Härryda,daniel.Berntsson78@gmail.com,,https://www.laget.se/MolnlyckeIS-Ungdom
+,,Neutrala UF,40918,flygvädersgatan 8,,41838,,GÖTEBORG,Göteborg,moefarah13@gmail.com; aliyare.gaani@hotmail.com; neutrala97@gmail.com,,www.laget.se/NEUTRALA
+,,Nigerian Family KF,51919,övre kaserngåden 6,,41527,,göteborg,Göteborg,"info@nfagoteborg.com, omozid@yahoo.com",,
+,,Nokhba FC ,56564,Paprikagatan 9,Samir Albtish,42447,,Angered,,shivan.rashid@my.com,,
+,,Nol IK,3115,Box 10,,44921,,NÖDINGE,Ale,nolik1928@live.se,,https://www.laget.se/nolik
+,,North Kings FC ,56446,,,,,,Göteborg,kenzofficial@outlook.com,,
+,,NorthLion FC,66836,Munkebäcksgatan 14 c,,41653,,Göteborg,Göteborg,daniel.olsson@fjaraskupan.se,,
+,,Näsets SK,3220,Bergsätersgatan 7,,42166,,VÄSTRA FRÖLUNDA,Göteborg,kansliet@nasetssk.se; foreningsutvecklare@nasetssk.se,,http://www.nasetssk.se
+,,Nödinge SK Fotboll,3234,Box 17,,44921,,NÖDINGE,Ale,nskfotboll@hotmail.se,,http://www.laget.se/nskfotboll
+,,Partille IF FK,45375,Nygårsvägen 1,Partille IF FK,43332,,Partille,Partille,ordforande@partilleif.se,,www.partilleif.se
+,,Poseidon FC,66870,Bögatan 50B,,41272,,Göteborg,Göteborg,robert@poseidonfc.se,,www.poseidonfc.se
+,,Proletären FF,3314,Åkereds Skolväg 22,,42166,,VÄSTRA FRÖLUNDA,Göteborg,kontakt@proletarenff.se,,proletarenff.se
+,,Pushers BK,8404,Nordhemsgatan 69 A,Leif Fransson,41309,,GÖTEBORG,Göteborg,Pushers48@gmail.com; Nicholas.Singleton@goteborgsregionen.se ,,https://www.laget.se/PUSHERSBK
+,,Qviding FIF,24330,Härlanda Park 6B,,416 52,,GÖTEBORG,Göteborg,kansli@qviding.se,,www.qviding.se
+,,Rampen IK,52444,Vantgatan 3B,Kaisa Gunnedal,414 56,,Göteborg,Mölndal,info@rampen.co,,www.rampen.co
+,,Real Maskin BK,22849,Nymånegatan 5,Anders Bengtsson,41508,,GÖTEBORG,Göteborg,real.maskin@gmail.com,,www.realmaskin.se
+,,Riyyo Atletic FC ,55995,Kryddhyllan 23,,42439,,Angered,Göteborg,Riyyoatleticfc@gmail.com,,
+,,Romelanda UF,3387,Romevi Hög 130,,44292,,ROMELANDA,Kungälv,kansliet@ruf.nu,,www.ruf.nu
+,,Rödbo IF,8411,Lotsgatan 12,Lars-Ivan Claesson,414 58,,Göteborg,Kungälv,Ian_cla2@yahoo.se,,www.laget.se/rodboif
+,,Rörö IF,3474,"Lennart Zackrisson, Box 82",,47518,,RÖRÖ,Öckerö,lennart125@hotmail.com,,
+,,Salaam IF ,67052,Långströmsgatan 19C,,41870,,Göteborg,Göteborg,ali.al-shimary@outlook.com,,www.salaamif.se
+,,Sandarna BK,3500,Ostindiegatan 25,,41452,,GÖTEBORG,Göteborg,sandarna@hotmail.se,,https://sandarnabk.sportadmin.se/
+,,Serbiska KIF Semberija Göteborg,30924,Kalendervägen 2,,41534,,GÖTEBORG,Göteborg,zoran_semberija@hotmail.se,,www.laget.se/semberija
+,,Serbiska KoIF Kozara,8374,Dagjämningsgatan 1,,41536,,Göteborg,Göteborg,kozara.goteborg@hotmail.com; zoran.vajagic@hotmail.com,,www.laget.se/kozara
+,,SF Sindjelic,3569,Box 13011,,40251,,GÖTEBORG,Göteborg,sfsindjelic@gmail.com,,http://www.sindjelic.se
+,,SG Ruddalen IF,1771,Musikvägen 61,,42139,,Västra Frölunda,Göteborg,kansli@sgruddalen.se,,www.sgruddalen.se
+,,Sjövalla FK,3586,Finnsjövägen 12,,435 41,,MÖLNLYCKE,Härryda,sjovallafkfotboll@gmail.com,,https://www.laget.se/SjovallaFKfotboll
+,,SK Argo,8295,Ekedalsgatan 26,,41468,,GÖTEBORG,Göteborg,info@skargo.se; petersjogren76@hotmail.com; mande257@volvocars.com,,http://skargo.se
+,,Skogens IF,3623,Johan Alins gata 2,,41476,,GÖTEBORG,Göteborg,skogens.if@gmail.com,,http://www.laget.se/skogensif
+,,Solväders FC,43467,Klarvädersgatan 1,Hector Valeria,41839,,Göteborg,Göteborg,solvaders97@gmail.com ,,Facebook sida: Biskopsgarden E Vi
+,,Solängens BK,8421,Bäckstensgatan 15,,43149,,MÖLNDAL,Mölndal,kansli@solangensbk.se,,www.laget.se/Solangensbk
+,,Stenkullen GoIK,3782,Granitvägen 3,,44360,,Stenkullen,Lerum,info@stenkullengoik.com,,http://www.stenkullengoik.com
+,,Styrsö BK,3884,Brattenskogen 11,Dragan Janicijevic,43084,,Styrsö,Göteborg,info@styrsobk.se,,http://www.styrsobk.se
+,,Surte IS FK,42009,Box 2050,,445 02 ,,SURTE,Ale,surtebohus@gmail.com,,http://www.laget.se/surteis
+,,Swed-Som IF ,67002,Bergsjödalen 57,,41561,,Göteborg,Göteborg,ssv_98@hotmail.com,,
+,,Svensk-Somaliska FS,51184,Fjäderhavsgatan 105,Nagy,424 66,,Angered,Göteborg,geza@interkultura.net; mfmsam@hotmail.com,,
+,,Syrianska Göteborg FC,44089,Fotbollsvägen 48,,42433,,Angered,Göteborg,gabriel.yildirim@hotmail.com,,www.syrianskagoteborg.se
+,,Säve SK,3972,Tåfjällsvägen 15,,42371,,SÄVE,Göteborg,info@savesk.se,,www.laget.se/savesk
+,,Sävedalens IF,8426,Hultvägen 2,,433 64,,SÄVEDALEN,Partille,kansli@savedalensif.se; kassor@savedalensif.se,,www.savedalensif.se
+,,Tollereds IF,4099,Gamla Sågvägen 6,Thomas Balmér,44850,,TOLLERED,Lerum,info@tolleredsif.se,,http://www.tolleredsif.se
+,,Torslanda FC,40286,Torslanda Idrottsväg 17,Torslanda IK,42332,,TORSLANDA,Göteborg,patrik.falk@torslandaik.com,,www.torslandaik.com
+,,Torslanda IK,4121,Torslanda Idrottsväg 17,,423 32,,TORSLANDA,Göteborg,kansli@torslandaik.com,,http://www.torslandaik.com
+,,Tuve BK ,54682,Lillhagsvägen 291,C/O Jonas Sand,42250,,Hisings Backa,Göteborg,styrelsetuvebk@gmail.com,,
+,,Tynnered FC,52395,Safirgatan 13,Ibrahim Maruvge,421 48,,Västra Frölunda,Göteborg,tynneredfc@hotmail.com,,
+,,Utbynäs FF,38984,Lemmingsgatan 5,Utbynäs SK,41507,,GÖTEBORG,Göteborg,christer.oxien@utbynassk.se,,www.utbynassk.se
+,,Utbynäs SK,4292,Utbynäs SK,,415 72,,GÖTEBORG,Göteborg,kansli-fb@utbynassk.se,,www.utbynassk.se
+,,Utsiktens BK,4293,Musikvägen 55,Ruddalens IP,42139,,VÄSTRA FRÖLUNDA,Göteborg,info@utsiktensbk.se; henrik.frendin@utsiktensbk.se; tompas296@gmail.com,,http://www.utsiktensbk.se
+,,Utsiktens Elitfotboll AB,94293,Musikvägen 55,Ruddalens IP,42139,,Västra Frölunda,Göteborg,info@utsiktensbk.se,,http://www.utsiktensbk.se
+,,Valhall BK,66992,Skolvägen 3,Magnus Hall,44250,,Ytterby,Göteborg,helge86@hotmail.com,,
+,,Valhalla FC,55902,Tryggvegatan 6,,41727,,Göteborg ,Göteborg,Valhallaafc@gmail.com,,Svenskalag.se/gwfc-herr
+,,Vatra KIF,53618,Fjäderharvsgatan 24,Behar Tahiri,424 66,,Angered,Göteborg,tahiri_behar_@hotmail.com,,
+,,WIP Idrottsförening,55691,Kvarnkullevägen 2D,Camilla Augustin,42333,,Torslanda,Göteborg,fredrik@padel-academy.se,,
+,,Vitalis Göteborg FF,66909,Ebbe Lieberathsgatan 31C,,41282,,Göteborg,Göteborg,atilasamkhanzadeh@gmail.com,,
+,,Vrångö IF,8440,Box 49,,43083,,VRÅNGÖ,Göteborg,fribergjohan0@gmail.com; vrangoif@hotmail.com; claes.friberg@icloud.com,,www.laget.se/vrangoif
+,,Västkurd BK,52378,Vintervädersgatan 15,Yakup Sari,41836,,Göteborg,Göteborg,Nicolas@travel4you.se; vastkurdbk@gmail.com; vurre74@hotmail.com; dendelen@gmail.com; ulasaltuntas@gmail.com,,www.vastkurdbk.se
+,,Västra Frölunda IF,4526,Klubbvägen 19,,421 47,,VÄSTRA FRÖLUNDA,Göteborg,info@vastrafrolunda.com,,http://www.vastrafrolunda.com
+,,Youth FC,66740,BOX 2002,,43302,,SÄVEDALEN ,Partille,mats@majaab.se,,
+,,Ytterby IS,4568,Box 2134,,442 02,,Ytterby ,Kungälv,kansli@ytterbyis.nu,,http://www.ytterbyis.nu
+,,Älvsborg FF,8326,Box 5005,,42674,,VÄSTRA FRÖLUNDA,Göteborg,kansli@alvsborgff.se,,http://www.alvsborgff.se
+,,Älvängens IK,4648,Hövägen 23,,446 32,,ÄLVÄNGEN,Ale,Alvangens.Idrottsklubb@outlook.com,,www.laget.se/alvangensik
+,,Öckerö IF,4663,Norgårdsvägen 89,,475 31,,ÖCKERÖ,Öckerö,malin.andersson@ockeroif.se,,http://www.ockeroif.se
+,,Öjersjö IF,31259,Tallmossevägen 9,,43350,,ÖJERSJÖ,Partille,kansli@ojersjoif.se,,http://www.ojersjoif.se
+,,Önnereds IK,4679,Box 113,,421 21,,VÄSTRA FRÖLUNDA,Göteborg,onneredsik@hotmail.com,, www.svenskalag.se/onneredsik
+,,Örgryte IS Fotboll,51822,Korndalsvägen 2,,412 76,,Göteborg,Göteborg,andreas.karlsson@oisfotboll.se; max.pahlman@oisfotboll.se,,www.oisfotboll.se
+,,Ösets BK,8444,Svanebäcksgatan 16,,41471,,GÖTEBORG,Göteborg,oset.kassor@gmail.com;bejo52@hotmail.com,,www.svenskalag.se/osetsbk
+,,,,,,,,,,,,
+,,,,,,,,,,,198 föreningar,
+
+

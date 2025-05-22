@@ -1,24 +1,15 @@
 #!/usr/bin/env python3
 """
-sponsor_match/data/ingest_csv.py
---------------------------------
-Read data/bolag_1_500_sorted_with_year.csv, geocode each company,
-and load it idempotently into sponsor_registry.companies.
-
-Usage:
-    python -m sponsor_match.data.ingest_csv
+sponsor_match/data/ingest_companies.py
+-----------------------------------------
+Read data/bolag_1_500_with_coords.csv (already geocoded) and load into companies table.
 """
 
 import sys
 import logging
 from pathlib import Path
-
 import pandas as pd
-from geopy.exc import GeocoderServiceError, GeopyError
-from geopy.extra.rate_limiter import RateLimiter
-from geopy.geocoders import Nominatim
 from sqlalchemy import text
-
 from sponsor_match.core.db import get_engine
 
 # Configure logging
@@ -28,102 +19,77 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def try_geocode(address: str, geocode: RateLimiter) -> tuple[float|None, float|None]:
-    """Geocode with a few fallbacks; return (lat, lon) or (None, None)."""
-    variants = [
-        address,
-        f"{address}, Sweden",
-        address.replace("Västra Frölunda", "Göteborg"),
-    ]
-    for q in variants:
-        if not q:
-            continue
-        try:
-            loc = geocode(q, country_codes="se", exactly_one=True)
-        except (GeocoderServiceError, GeopyError):
-            continue
-        if loc:
-            return loc.latitude, loc.longitude
-    return None, None
 
 def main() -> None:
-    # 1) locate CSV
+    # Use the already geocoded file
     project_root = Path(__file__).resolve().parents[2]
-    csv_path = project_root / "data" / "bolag_1_500_sorted_with_year.csv"
+    csv_path = project_root / "data" / "bolag_1_500_with_coords.csv"
 
-    # 2) read
+    # Read the geocoded file
     try:
         df = pd.read_csv(csv_path, encoding="utf-8")
         logger.info("Loaded %d rows from %s", len(df), csv_path)
     except FileNotFoundError:
         logger.error("CSV not found at %s", csv_path)
         sys.exit(1)
-    except pd.errors.EmptyDataError:
-        logger.error("CSV at %s is empty", csv_path)
-        sys.exit(1)
     except Exception as e:
         logger.exception("Unexpected read error: %s", e)
         sys.exit(1)
 
-    # 3) validate columns
-    expected = {"Företagsnamn","Postadress","Omsättning (tkr)","Anställda","År"}
-    missing = expected - set(df.columns)
-    if missing:
-        logger.error("Missing columns %s; found %s", missing, df.columns.tolist())
-        sys.exit(1)
-
-    # 4) rename & compute bucket
+    # Rename columns to match database schema
     df = df.rename(columns={
-        "Företagsnamn":"name",
-        "Postadress":"address",
-        "Omsättning (tkr)":"revenue_ksek",
-        "Anställda":"employees",
-        "År":"year",
+        "Företagsnamn": "name",
+        "Postadress": "address",
+        "Omsättning (tkr)": "revenue_ksek",
+        "Anställda": "employees",
+        "År": "year",
     })
-    bins = [0,5_000_000,50_000_000,float("inf")]
-    labels = ["small","medium","large"]
-    df["size_bucket"] = pd.cut(df["revenue_ksek"]*1000, bins=bins, labels=labels)
 
-    # 5) geocode
-    geo = Nominatim(user_agent="sponsor_match_geo", timeout=10)
-    geocode = RateLimiter(geo.geocode, min_delay_seconds=1.0)
-    df["lat"], df["lon"] = zip(*df["address"].apply(lambda a: try_geocode(a, geocode)))  # :contentReference[oaicite:0]{index=0}:contentReference[oaicite:1]{index=1}
-    failed = df["lat"].isna().sum()
-    if failed:
-        logger.warning("Geocoding failed for %d/%d companies; distances will be ∞", failed, len(df))
+    # Calculate size bucket based on revenue
+    def calculate_size_bucket(revenue_ksek):
+        if pd.isna(revenue_ksek):
+            return "medium"
+        revenue_sek = revenue_ksek * 1000
+        if revenue_sek < 5_000_000:
+            return "small"
+        elif revenue_sek < 50_000_000:
+            return "medium"
+        else:
+            return "large"
 
-    # 6) select final columns
-    df = df[["name","address","revenue_ksek","employees","year","size_bucket","lat","lon"]]
+    df["size_bucket"] = df["revenue_ksek"].apply(calculate_size_bucket)
 
-    # 7) write to DB (idempotent)
+    # Add default industry and orgnr to match database schema
+    df["industry"] = "Other"
+    df["orgnr"] = None  # No organization numbers in our data
+
+    # Select final columns matching database schema
+    final_columns = ["orgnr", "name", "revenue_ksek", "employees", "year", "size_bucket", "industry", "lat", "lon"]
+    df = df[final_columns]
+
+    # Drop rows with missing coordinates
+    before_count = len(df)
+    df = df.dropna(subset=["lat", "lon"])
+    after_count = len(df)
+    if before_count > after_count:
+        logger.warning("Dropped %d rows with missing coordinates", before_count - after_count)
+
+    # Write to database
     engine = get_engine()
-    ddl = """
-    CREATE TABLE IF NOT EXISTS companies (
-      id            BIGINT AUTO_INCREMENT PRIMARY KEY,
-      name          TEXT,
-      address       TEXT,
-      revenue_ksek  DOUBLE,
-      employees     INT,
-      year          INT,
-      size_bucket   ENUM('small','medium','large'),
-      industry      TEXT,
-      lat           DOUBLE,
-      lon           DOUBLE
-    ) CHARACTER SET utf8mb4;
-    """
 
     try:
         with engine.begin() as conn:
-            # force the correct schema (drops any old table & recreates with lat/lon)
-            conn.execute(text("DROP TABLE IF EXISTS companies"))
-            conn.execute(text(ddl))
-            # load all rows in one go
+            # Clear existing data and insert new
+            conn.execute(text("DELETE FROM companies"))
             df.to_sql("companies", conn, if_exists="append", index=False)
+
             new_count = conn.execute(text("SELECT COUNT(*) FROM companies")).scalar() or 0
-            logger.info("✅ Ingestion complete. Total rows now: %d", new_count)
+            logger.info("✅ Companies ingestion complete. Total rows: %d", new_count)
+
     except Exception as e:
         logger.exception("DB error during ingest: %s", e)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

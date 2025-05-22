@@ -1,31 +1,39 @@
+# tasks.py
+
 from invoke import task
 
 @task
-def setup(c):
-    """Install package and development dependencies."""
-    c.run("pip install -e '.[dev]'")
+def build_data(ctx):
+    """
+    Build and preprocess association data CSV (including geocoding).
+    """
+    ctx.run("python -m sponsor_match.data.build_associations_csv", pty=True)
 
 @task
-def data(c):
-    """Run data ingestion pipelines."""
-    # Build associations CSV with coordinates
-    c.run("python -m scripts.build_associations_csv data/associations_goteborg.csv")
-    # Ingest company data from CSV
-    c.run("python -m sponsor_match.data.ingest_csv")
-    # Ingest club associations into the database
-    c.run("python -m sponsor_match.data.ingest_associations data/associations_goteborg_with_coords.csv")
+def ingest_data(ctx):
+    """
+    Ingest the associations CSV into the MySQL database.
+    """
+    ctx.run("python -m sponsor_match.data.ingest_associations", pty=True)
+
+@task(pre=[build_data, ingest_data])
+def refresh_db(ctx):
+    """
+    Run build_data then ingest_data to refresh the database end-to-end.
+    """
+    # pre-tasks already ran; use ctx so the parameter isn't unused
+    ctx.run("echo 'Database refresh complete.'", pty=True)
 
 @task
-def train(c):
-    """Train K-Means clustering models."""
-    c.run("python -m sponsor_match.models.clustering")
+def run(ctx):
+    """
+    Launch the Streamlit application.
+    """
+    ctx.run("streamlit run streamlit_app.py", pty=True)
 
 @task
-def train_classifier(c):
-    """Train the ML-based matching model."""
-    c.run("python -m sponsor_match.cli.train_matcher")
-
-@task
-def app(c):
-    """Launch the Streamlit application."""
-    c.run("streamlit run sponsor_match/ui/app.py", pty=True)
+def test(ctx):
+    """
+    Run the test suite.
+    """
+    ctx.run("pytest --maxfail=1 --disable-warnings -q", pty=True)

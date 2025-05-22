@@ -1,64 +1,109 @@
 #!/usr/bin/env python3
 """
 sponsor_match/models/clustering.py
-----------------------------------
-Train MiniBatchKMeans models on club geocoordinates,
-one per size bucket, and persist them to disk.
-"""
 
+Defines clustering logic for SponsorMatch AI: training, saving, loading, and inference.
+"""
+import os
+import pickle
 import logging
 from pathlib import Path
 
-import joblib
 import pandas as pd
-from sklearn.cluster import MiniBatchKMeans
+from sklearn.cluster import KMeans
 
-from sponsor_match.core.db import get_engine
-from sponsor_match.core.config import config
+from sponsor_match.core.config import DATA_DIR, MODELS_DIR, LOG_LEVEL
 
-# Configure logger
-logger = logging.getLogger(__name__)
+# Configure logging
 logging.basicConfig(
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL),
+    format="%(asctime)s %(levelname)s %(message)s"
 )
 
-MODEL_DIR: Path = config.models_dir
-MODEL_DIR.mkdir(parents=True, exist_ok=True)
+# Constants
+MODEL_FILE = MODELS_DIR / os.getenv("CLUSTER_MODEL_FILE", "kmeans.pkl")
+N_CLUSTERS = int(os.getenv("N_CLUSTERS", 5))
+RANDOM_STATE = int(os.getenv("CLUSTER_RANDOM_STATE", 42))
+FEATURE_COLUMNS = ["latitude", "longitude"]
 
-def train_kmeans_for_bucket(size_bucket: str) -> None:
-    logger.info("Loading clubs in bucket '%s'", size_bucket)
-    engine = get_engine()
 
-    # Inline the bucket value for compatibility
-    sql = f"SELECT lat, lon FROM clubs WHERE size_bucket = '{size_bucket}'"
-    df = pd.read_sql(sql, engine)
+def train(
+    input_csv: Path = None,
+    model_file: Path = None,
+    n_clusters: int = N_CLUSTERS,
+    random_state: int = RANDOM_STATE,
+):
+    """
+    Train a KMeans clustering model on the association data and save the model to disk.
+    """
+    if input_csv is None:
+        input_csv = DATA_DIR / "associations_goteborg_with_coords.csv"
+    if model_file is None:
+        model_file = MODEL_FILE
 
-    coords = df.dropna(subset=["lat", "lon"]).to_numpy()
-    if coords.size == 0:
-        logger.warning("No coordinates found for bucket '%s'; skipping", size_bucket)
+    if not Path(input_csv).exists():
+        logging.error(f"Input CSV not found: {input_csv}")
         return
 
-    logger.info(
-        "Training MiniBatchKMeans (n_clusters=%d, batch_size=%d) on %d points",
-        config.kmeans_clusters,
-        config.kmeans_batch_size,
-        len(coords),
-    )
-    km = MiniBatchKMeans(
-        n_clusters=config.kmeans_clusters,
-        batch_size=config.kmeans_batch_size,
-        random_state=42
-    )
-    km.fit(coords)
+    # Load data
+    df = pd.read_csv(input_csv)
+    if not all(col in df.columns for col in FEATURE_COLUMNS):
+        logging.error(f"Required columns not found in CSV: {FEATURE_COLUMNS}")
+        return
+    features = df[FEATURE_COLUMNS].dropna()
+    if features.empty:
+        logging.error("No valid feature data available for clustering.")
+        return
 
-    out_path = MODEL_DIR / f"kmeans_{size_bucket}.joblib"
-    joblib.dump(km, out_path)
-    logger.info("Saved KMeans model to %s", out_path)
+    # Train model
+    model = KMeans(n_clusters=n_clusters, random_state=random_state)
+    model.fit(features)
 
-def main() -> None:
-    for bucket in ["small", "medium", "large"]:
-        train_kmeans_for_bucket(bucket)
+    # Ensure models directory exists
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Save model
+    with open(model_file, "wb") as f:
+        pickle.dump(model, f)
+    logging.info(f"Trained KMeans ({n_clusters} clusters) and saved to {model_file}")
+
+
+def load_model(model_file: Path = None):
+    """
+    Load the clustering model from disk.
+    """
+    if model_file is None:
+        model_file = MODEL_FILE
+    if not model_file.exists():
+        raise FileNotFoundError(f"Model file not found: {model_file}")
+    with open(model_file, "rb") as f:
+        model = pickle.load(f)
+    return model
+
+
+def predict(lat: float, lon: float, model=None):
+    """
+    Predict the cluster label for a given latitude and longitude.
+    """
+    if model is None:
+        model = load_model()
+    cluster = model.predict([[lat, lon]])
+    return int(cluster[0])
+
 
 if __name__ == "__main__":
-    main()
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser(description="Train or retrain the clustering model.")
+    parser.add_argument("--input-csv", type=Path, help="Path to associations CSV")
+    parser.add_argument("--output-model", type=Path, help="Path to save trained model")
+    parser.add_argument("--n-clusters", type=int, default=N_CLUSTERS, help="Number of clusters")
+    parser.add_argument("--random-state", type=int, default=RANDOM_STATE, help="Random seed")
+    args = parser.parse_args()
+
+    train(
+        input_csv=args.input_csv,
+        model_file=args.output_model,
+        n_clusters=args.n_clusters,
+        random_state=args.random_state,
+    )
