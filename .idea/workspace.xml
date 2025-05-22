@@ -7,65 +7,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="f27783fc-e02d-4d39-ad27-aca1d5896aaa" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/archive/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/archive/debug/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/archive/debug/debug_report_20250514_182948.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/archive/debug/discover_structure.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/archive/debug/project_structure.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/archive/debug/search_issue_debugger.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/archive/scripts/build_associations_csv.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/retrain_clustering.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/cli/run_pipeline.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/ml/pipeline.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/ui/styles.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/temp_ingest.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_fixes.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/generate_sample_data.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.env" beforeDir="false" afterPath="$PROJECT_DIR$/.env" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/SponsorMatchAI.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/SponsorMatchAI.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/debug/debug_report_20250514_182948.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/debug/discover_structure.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/debug/project_structure.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/debug/search_debug_20250514_182947.log" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/debug/search_issue_debugger.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/models/kmeans.joblib" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/archive/scripts/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/build_associations_csv.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/filter_gothenburg.py" beforeDir="false" afterPath="$PROJECT_DIR$/archive/scripts/filter_gothenburg.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/geocode_gothenburg_companies.py" beforeDir="false" afterPath="$PROJECT_DIR$/archive/scripts/geocode_gothenburg_companies.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/cli/db_init.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/cli/db_init.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/cli/train_matcher.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/cli/train_matcher.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/core/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/core/config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/core/db.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/core/db.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/data/ingest_associations.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/data/ingest_associations.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/data/ingest_companies.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/data/ingest_companies.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/models/clustering.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/models/clustering.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/models/kmeans_large.joblib" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/services/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/services/service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/components/cards.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/components/cards.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/components/map_view.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/components/map_view.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/components/modals.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/components/modals.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/components/sidebar.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/components/sidebar.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/pages/home.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/pages/home.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/pages/profile.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/pages/profile.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/pages/search.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/pages/search.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/services/data_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/services/data_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/services/search_services.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/services/search_services.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/utils/sessions.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/utils/sessions.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/streamlit_app.py" beforeDir="false" afterPath="$PROJECT_DIR$/streamlit_app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tasks.py" beforeDir="false" afterPath="$PROJECT_DIR$/tasks.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_clustering.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_clustering.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/check_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/check_db.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/list_project_files.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/list_project_files.py" afterDir="false" />
-    </list>
+    <list default="true" id="f27783fc-e02d-4d39-ad27-aca1d5896aaa" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
