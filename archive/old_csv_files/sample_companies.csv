@@ -1,0 +1,51 @@
+id,orgnr,name,revenue_ksek,employees,year,size_bucket,industry,lat,lon
+1,207473-9935,"Rodriguez, Figueroa and Sanchez AB",83158,198,2024,medium,Technology,57.75721,11.923578
+2,688508-4257,Doyle Ltd Group,279951,21,2024,large,Healthcare,57.614859,11.918328
+3,832052-7924,"Mcclain, Miller and Henderson Ltd",18407,55,2022,small,Healthcare,59.319142,18.024238
+4,201414-6881,Davis and Sons Ltd,147251,244,2024,medium,Manufacturing,59.420743,18.035919
+5,678856-5803,"Guzman, Hoffman and Baldwin Group",421922,60,2024,large,Finance,57.754846,11.981846
+6,910620-5741,"Gardner, Robinson and Lawrence AB",718384,136,2021,large,Finance,58.349258,15.535311
+7,488162-6820,Blake and Sons AB,201277,51,2022,medium,Technology,59.814195,17.666037
+8,584714-7216,"Henderson, Ramirez and Lewis Ltd",138351,51,2024,medium,Technology,58.437796,15.628228
+9,133659-6168,Garcia-James Ltd,290174,470,2022,large,Manufacturing,55.67357,13.059
+10,322955-9179,Abbott-Munoz Ltd,386393,90,2023,large,Technology,59.411927,18.082036
+11,883300-8019,Blair PLC Group,615158,184,2023,large,Manufacturing,55.532926,13.052798
+12,892495-1771,Dudley Group AB,542488,66,2021,large,Finance,59.428765,17.996266
+13,654816-5119,Arnold Ltd Group,674834,289,2020,large,Manufacturing,59.877882,17.615853
+14,407757-8123,"Mcclure, Ward and Lee AB",188349,38,2023,medium,Technology,58.460976,15.67512
+15,755674-5889,Williams and Sons Group,276171,37,2024,large,Technology,55.699378,13.056192
+16,728038-6310,Galloway-Wyatt Ltd,298058,25,2020,large,Retail,59.259868,18.121102
+17,160738-4946,James Group Group,171225,71,2020,medium,Technology,55.680744,13.070133
+18,234628-8787,"Flowers, Martin and Kelly Group",289291,42,2021,large,Technology,59.921805,17.734497
+19,891952-4295,"Adams, Zuniga and Wong Group",247086,296,2022,medium,Finance,58.485287,15.606028
+20,335612-2049,"Reid, Ferguson and Sanchez Ltd",78441,78,2020,medium,Healthcare,55.59262,13.007315
+21,340062-2104,Gray-Mayo AB,57220,32,2022,medium,Retail,58.356823,15.565443
+22,238739-8744,"Watts, Robinson and Nguyen AB",122321,148,2023,medium,Technology,58.358401,15.655196
+23,531071-8651,Perez Inc Group,200753,123,2020,medium,Healthcare,59.248165,18.100397
+24,360735-4139,Morales-Jones AB,461764,37,2024,large,Technology,57.689424,11.942461
+25,564656-2604,"Walter, Edwards and Rios AB",145970,34,2024,medium,Healthcare,59.313676,18.024309
+26,609231-8886,Wilkerson-Day AB,97194,114,2023,medium,Technology,57.794173,12.044339
+27,399105-7930,Baker and Sons Group,149042,126,2024,medium,Technology,59.305095,18.165662
+28,884309-6138,"Hoffman, Baker and Richards AB",45662,30,2020,small,Healthcare,59.26728,18.01214
+29,632496-2312,"Ross, Robinson and Bright AB",102540,32,2020,medium,Retail,59.85917,17.709444
+30,358175-1651,"Snyder, Campos and Callahan Group",82855,97,2020,medium,Retail,57.743943,11.921641
+31,802258-6147,Burton Ltd AB,151716,67,2022,medium,Healthcare,58.423845,15.584674
+32,109767-8508,Carlson-Cruz Group,180767,33,2024,medium,Healthcare,59.363638,18.028599
+33,172132-5002,"Ferrell, Rice and Maddox Ltd",79445,99,2022,medium,Technology,57.716427,11.975777
+34,785743-9666,Frazier Inc AB,691390,463,2024,large,Manufacturing,59.925349,17.679608
+35,878480-3546,"Dyer, Potter and Mack Ltd",146035,74,2022,medium,Finance,57.796686,11.901458
+36,612262-5114,Rodriguez-Graham AB,158403,89,2020,medium,Retail,59.372822,18.009319
+37,269430-8239,Smith-Bowen Group,83587,82,2023,medium,Healthcare,55.513817,12.970511
+38,137778-7049,"Baker, Mason and White Group",98147,94,2024,medium,Retail,57.631275,12.06361
+39,141832-6862,Harrell LLC AB,992650,457,2021,large,Manufacturing,59.784089,17.600552
+40,885884-3532,"Romero, Gonzalez and Brooks AB",223058,168,2021,medium,Technology,55.661023,13.080627
+41,531712-5065,Ryan PLC Ltd,398321,450,2021,large,Manufacturing,59.763557,17.686213
+42,956253-8541,George Group Ltd,126619,61,2022,medium,Technology,59.933033,17.710619
+43,172792-5573,Rodriguez LLC Ltd,394207,192,2024,large,Manufacturing,59.234033,18.007226
+44,708792-5349,Allen-Allen AB,151951,60,2020,medium,Healthcare,58.37703,15.52692
+45,221263-7311,"Arroyo, Miller and Tucker Group",248796,90,2021,medium,Retail,59.827737,17.696186
+46,481913-8066,Spence PLC AB,589607,120,2022,large,Finance,57.750657,11.874938
+47,424308-7691,Anderson Group Ltd,177455,89,2023,medium,Retail,55.637677,12.928725
+48,745414-5930,"Martin, Rose and Obrien Ltd",422562,109,2024,large,Finance,58.336258,15.605489
+49,786508-6279,Hickman Ltd Ltd,314079,165,2023,large,Technology,55.562383,12.989778
+50,397571-9445,"Harris, Collins and Carney Group",103967,36,2024,medium,Healthcare,59.331535,18.127347

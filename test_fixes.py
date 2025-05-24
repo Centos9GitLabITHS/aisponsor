@@ -2,7 +2,6 @@
 """Test all the fixes."""
 
 import sys
-import logging
 from pathlib import Path
 
 # Add project root to path

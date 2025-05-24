@@ -7,7 +7,33 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="f27783fc-e02d-4d39-ad27-aca1d5896aaa" name="Changes" comment="" />
+    <list default="true" id="f27783fc-e02d-4d39-ad27-aca1d5896aaa" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/diagnose_data_flow.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sponsor_match/data/geocode_with_municipality.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sponsor_match/data/ingest_associations_fixed.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sponsor_match/ui/utils/archive_migration.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_recommendations.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/utils/setup_database.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/utils/train_clustering_models.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/data/examine.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/kmeans.joblib" beforeDir="false" afterPath="$PROJECT_DIR$/models/kmeans.joblib" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/kmeans_large.joblib" beforeDir="false" afterPath="$PROJECT_DIR$/models/kmeans_large.joblib" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/core/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/core/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/data/ingest_associations.py" beforeDir="false" afterPath="$PROJECT_DIR$/archive/scripts/ingest_associations.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ml/pipeline.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ml/pipeline.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/models/clustering.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/models/clustering.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/models/entities.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/models/entities.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/services/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/services/service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/pages/search.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/pages/search.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_fixes.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_fixes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/list_project_files.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/list_project_files.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils_output/project_dump_part1.txt" beforeDir="false" afterPath="$PROJECT_DIR$/utils_output/project_dump_part1.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils_output/project_dump_part2.txt" beforeDir="false" afterPath="$PROJECT_DIR$/utils_output/project_dump_part2.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils_output/project_dump_part3.txt" beforeDir="false" afterPath="$PROJECT_DIR$/utils_output/project_dump_part3.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils_output/project_dump_part4.txt" beforeDir="false" afterPath="$PROJECT_DIR$/utils_output/project_dump_part4.txt" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -37,42 +63,43 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;Python tests.Python tests in test_feature_engineer.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python.analyze_text_files.executor&quot;: &quot;Run&quot;,
-    &quot;Python.app.executor&quot;: &quot;Run&quot;,
-    &quot;Python.app_v2.executor&quot;: &quot;Run&quot;,
-    &quot;Python.check_db.executor&quot;: &quot;Run&quot;,
-    &quot;Python.create_simple_dump.executor&quot;: &quot;Run&quot;,
-    &quot;Python.deep_analyze.executor&quot;: &quot;Run&quot;,
-    &quot;Python.geocode_companies.executor&quot;: &quot;Run&quot;,
-    &quot;Python.list_project_files.executor&quot;: &quot;Run&quot;,
-    &quot;Python.search_issue_debugger.executor&quot;: &quot;Run&quot;,
-    &quot;Python.streamlit_app.executor&quot;: &quot;Run&quot;,
-    &quot;Python.tasks.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/bakri/PycharmProjects/SponsorMatchAI/data&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python tests.Python tests in test_feature_engineer.py.executor": "Run",
+    "Python.analyze_text_files.executor": "Run",
+    "Python.app.executor": "Run",
+    "Python.app_v2.executor": "Run",
+    "Python.check_db.executor": "Run",
+    "Python.create_simple_dump.executor": "Run",
+    "Python.deep_analyze.executor": "Run",
+    "Python.geocode_companies.executor": "Run",
+    "Python.list_project_files.executor": "Run",
+    "Python.search_issue_debugger.executor": "Run",
+    "Python.streamlit_app.executor": "Run",
+    "Python.tasks.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "git-widget-placeholder": "future-advanced-app-setup",
+    "last_opened_file_path": "/home/bakri/PycharmProjects/SponsorMatchAI/sponsor_match/data",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/sponsor_match/data" />
       <recent name="$PROJECT_DIR$/data" />
       <recent name="$PROJECT_DIR$/sponsor_match/ui/utils" />
       <recent name="$PROJECT_DIR$/sponsor_match/ui/services" />
       <recent name="$PROJECT_DIR$/sponsor_match/ui" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
-      <recent name="$PROJECT_DIR$" />
+      <recent name="$PROJECT_DIR$/archive/old_csv_files" />
       <recent name="$PROJECT_DIR$/archive" />
+      <recent name="$PROJECT_DIR$/archive/scripts" />
+      <recent name="$PROJECT_DIR$" />
       <recent name="$PROJECT_DIR$/sponsor_match/models" />
-      <recent name="$PROJECT_DIR$/utils" />
-      <recent name="$PROJECT_DIR$/sponsor_match/core" />
     </key>
   </component>
   <component name="RunManager" selected="Python.list_project_files">

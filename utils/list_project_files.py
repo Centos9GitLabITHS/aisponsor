@@ -35,7 +35,11 @@ EXCLUDE_FILES = {
     'data/bolag_1_500_sorted_with_year.csv',
     'data/associations_goteborg.csv',
     'data/associations_goteborg_with_coords.csv',
-    'data/gothenburg_companies_addresses.csv'
+    'data/gothenburg_companies_addresses.csv',
+    'data/associations_geocoded.csv',
+    'data/companies_geocoded.csv',
+    'data/gothenburg_associations.csv',
+    'data/municipality_of_goteborg.csv'
 }
 EXCLUDE_FILENAMES = {'bolag_1_500_with_coords.csv'}
 

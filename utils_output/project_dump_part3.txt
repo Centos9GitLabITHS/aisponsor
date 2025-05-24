@@ -1,4 +1,298 @@
 ================================================================================
+FIL: sponsor_match/ui/styles.py
+================================================================================
+
+import streamlit as st
+
+
+def apply_professional_styles():
+    """Apply professional styling to Streamlit app."""
+    css = """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    /* Main app styling */
+    .main .block-container {
+        font-family: 'Inter', sans-serif;
+        padding-top: 1rem;
+        padding-bottom: 2rem;
+        max-width: 1200px;
+    }
+
+    /* Header styling */
+    h1 {
+        color: #1e40af !important;
+        font-weight: 700 !important;
+        margin-bottom: 2rem !important;
+    }
+
+    h2 {
+        color: #1e40af !important;
+        font-weight: 600 !important;
+        margin-bottom: 1.5rem !important;
+    }
+
+    /* Button styling */
+    .stButton > button {
+        background-color: #2563eb;
+        color: white;
+        border-radius: 8px;
+        font-weight: 500;
+        border: none;
+        padding: 0.5rem 1rem;
+        transition: all 0.2s ease;
+    }
+
+    .stButton > button:hover {
+        background-color: #1d4ed8;
+        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+        transform: translateY(-1px);
+    }
+
+    /* Metric cards */
+    [data-testid="metric-container"] {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Sidebar styling */
+    .css-1d391kg {
+        background-color: #f8fafc;
+    }
+
+    /* Input fields */
+    .stTextInput > div > div > input {
+        border-radius: 6px;
+        border: 1px solid #d1d5db;
+    }
+
+    .stTextInput > div > div > input:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    /* Success/Error styling */
+    .stSuccess {
+        background-color: #f0f9ff;
+        border-left: 4px solid #10b981;
+    }
+
+    .stError {
+        background-color: #fef2f2;
+        border-left: 4px solid #ef4444;
+    }
+    </style>
+    """
+    st.markdown(css, unsafe_allow_html=True)
+
+
+def create_metric_card(title, value, delta=None):
+    """Create a styled metric card."""
+    delta_html = ""
+    if delta:
+        color = "#10b981" if delta > 0 else "#ef4444"
+        arrow = "↗" if delta > 0 else "↘"
+        delta_html = f"""
+        <div style="color: {color}; font-size: 0.875rem; font-weight: 500;">
+            {arrow} {abs(delta):.1f}%
+        </div>
+        """
+
+    return f"""
+    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; 
+                padding: 1.5rem; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);">
+        <div style="color: #6b7280; font-size: 0.875rem; margin-bottom: 0.5rem;">
+            {title}
+        </div>
+        <div style="font-size: 1.875rem; font-weight: 700; color: #111827; margin-bottom: 0.25rem;">
+            {value}
+        </div>
+        {delta_html}
+    </div>
+    """
+
+================================================================================
+FIL: sponsor_match/ui/services/__init__.py
+================================================================================
+
+
+
+================================================================================
+FIL: sponsor_match/ui/services/data_service.py
+================================================================================
+
+"""
+Data service for handling data loading and initialization.
+"""
+import logging
+
+import pandas as pd
+
+from sponsor_match.core.db import get_engine
+from sponsor_match.ui.utils.sessions import set_session_data
+
+logger = logging.getLogger(__name__)
+
+# Global caches
+_engine = None
+_clubs_df = None
+_companies_df = None
+
+
+def load_initial_data():
+    """
+    Load initial data needed by the application.
+    This should be called once at startup.
+    """
+    try:
+        # Initialize engine
+        global _engine
+        _engine = get_engine()
+        logger.info("Database engine initialized")
+
+        # Load clubs
+        load_clubs()
+
+        # Load only if needed in UI
+        # load_companies()
+
+        return True
+    except Exception as e:
+        logger.error(f"Error loading initial data: {e}")
+        return False
+
+
+def load_clubs():
+    """
+    Load clubs from database or use fallback data.
+
+    Returns:
+        DataFrame of clubs
+    """
+    global _clubs_df
+
+    # Return cached data if available
+    if _clubs_df is not None:
+        return _clubs_df
+
+    try:
+        if _engine:
+            _clubs_df = pd.read_sql("SELECT * FROM clubs", _engine)
+            logger.info(f"Loaded {len(_clubs_df)} clubs from database")
+            return _clubs_df
+    except Exception as e:
+        logger.warning(f"Failed to load clubs from database: {e}")
+
+    # Create sample data as fallback
+    _clubs_df = pd.DataFrame({
+        'id': [1, 2, 3],
+        'name': ['IFK Göteborg', 'GAIS', 'BK Häcken'],
+        'size_bucket': ['large', 'medium', 'medium'],
+        'member_count': [500, 250, 300],
+        'lat': [57.7089, 57.6969, 57.7209],
+        'lon': [11.9746, 11.9789, 11.9390],
+        'address': ['Göteborg', 'Göteborg', 'Göteborg']
+    })
+    logger.info("Using sample club data")
+
+    return _clubs_df
+
+
+def load_companies():
+    """
+    Load companies from database or use fallback data.
+
+    Returns:
+        DataFrame of companies
+    """
+    global _companies_df
+
+    # Return cached data if available
+    if _companies_df is not None:
+        return _companies_df
+
+    try:
+        if _engine:
+            _companies_df = pd.read_sql("SELECT * FROM companies", _engine)
+            logger.info(f"Loaded {len(_companies_df)} companies from database")
+            return _companies_df
+    except Exception as e:
+        logger.warning(f"Failed to load companies from database: {e}")
+
+    # Create sample data as fallback
+    _companies_df = pd.DataFrame([
+        {
+            "id": 1,
+            "name": "Nordic Bank",
+            "revenue_ksek": 50000,
+            "employees": 120,
+            "industry": "Finance",
+            "size_bucket": "large",
+            "lat": 57.70,
+            "lon": 11.97
+        },
+        {
+            "id": 2,
+            "name": "Energigruppen AB",
+            "revenue_ksek": 25000,
+            "employees": 45,
+            "industry": "Energy",
+            "size_bucket": "medium",
+            "lat": 57.71,
+            "lon": 11.98
+        }
+    ])
+    logger.info("Using sample company data")
+
+    return _companies_df
+
+
+def get_club_by_id(club_id):
+    """
+    Get a club by its ID.
+
+    Args:
+        club_id: Club ID to look up
+
+    Returns:
+        Club dictionary or None if not found
+    """
+    # Load clubs if needed
+    clubs = load_clubs()
+
+    # Find club by ID
+    club_row = clubs[clubs['id'] == club_id]
+    if len(club_row) > 0:
+        return club_row.iloc[0].to_dict()
+
+    return None
+
+
+def save_club(club_data):
+    """
+    Save club data to database.
+    This is a placeholder - in a real app, this would update the database.
+
+    Args:
+        club_data: Dictionary of club data to save
+
+    Returns:
+        True if successful, False otherwise
+    """
+    # In a real application, this would save to the database
+    logger.info(f"Saving club data: {club_data}")
+
+    # For now, just store in session state
+    set_session_data("selected_club", club_data)
+
+    # Pretend it was successful
+    return True
+
+
+================================================================================
 FIL: sponsor_match/ui/services/search_services.py
 ================================================================================
 
@@ -683,295 +977,353 @@ FIL: sponsor_match/ui/pages/search.py
 
 import streamlit as st
 import pandas as pd
-from sqlalchemy import text
-from sponsor_match.core.db import get_engine
-from sponsor_match.ui.services.search_services import recommend_sponsors
 import folium
-from streamlit_folium import st_folium
+from streamlit_folium import st_folium, folium_static, folium_static
+
+from sponsor_match.core.db import get_engine
+from sponsor_match.services.service import SponsorMatchService
+from sponsor_match.ml.pipeline import score_and_rank
 
 
-def load_clubs_df() -> pd.DataFrame:
-    """Load all associations from the database into a DataFrame."""
+def load_associations_service() -> SponsorMatchService:
+    """Get the service instance."""
     try:
         engine = get_engine()
-        with engine.connect() as conn:
-            df = pd.read_sql(
-                "SELECT id, name, size_bucket, lat, lon, address FROM associations",
-                conn
-            )
-        return df[df["name"].notna()]
+        return SponsorMatchService(engine)
     except Exception as e:
-        st.error(f"Database error: {e}")
-        # Fallback to sample data
-        return pd.DataFrame({
-            'id': [1, 2, 3, 4, 5],
-            'name': ['IFK Göteborg', 'GAIS', 'BK Häcken', 'Örgryte IS', 'Ahlafors IF'],
-            'size_bucket': ['large', 'medium', 'medium', 'medium', 'small'],
-            'lat': [57.7089, 57.6969, 57.7209, 57.7041, 57.6941],
-            'lon': [11.9746, 11.9789, 11.9390, 12.0027, 11.9124],
-            'address': ['Göteborg', 'Göteborg', 'Göteborg', 'Göteborg', 'Alafors']
-        })
+        st.error(f"Database connection error: {e}")
+        return None
+
+
+def search_associations(service: SponsorMatchService, query: str) -> pd.DataFrame:
+    """Search for associations using the service."""
+    if not service:
+        return pd.DataFrame()
+
+    try:
+        # Use the service search method
+        results = service.search(query)
+        # Filter to only associations
+        return results[results['type'] == 'association'].copy()
+    except Exception as e:
+        st.error(f"Search error: {e}")
+        return pd.DataFrame()
 
 
 def render_search_page():
-    st.title("🔍 Sponsor Match Search")
+    st.title("🔍 Find Sponsors for Your Club")
 
-    # Load clubs data
-    clubs_df = load_clubs_df()
+    # Initialize service
+    service = load_associations_service()
 
-    # Search input with autocomplete
-    col1, col2 = st.columns([2, 1])
+    # Search interface
+    col1, col2 = st.columns([3, 1])
 
     with col1:
-        search_query = st.text_input("🏆 Search for your association...",
-                                     placeholder="Type at least 2 characters")
+        search_query = st.text_input(
+            "🏆 Search for your club...",
+            placeholder="Type at least 2 characters",
+            key="club_search"
+        )
 
     with col2:
-        size_bucket = st.selectbox("Size:", ["small", "medium", "large"], index=1)
-        max_distance = st.slider("Max distance (km):", 1, 100, 15)
+        max_distance = st.slider("Max distance (km):", 1, 100, 25)
+        top_n = st.slider("Number of sponsors:", 5, 20, 10)
 
-    # Initialize session state for selected club
+    # Initialize session state
     if 'selected_club' not in st.session_state:
         st.session_state.selected_club = None
     if 'sponsors' not in st.session_state:
         st.session_state.sponsors = []
 
-    # Autocomplete logic
-    if search_query and len(search_query) >= 2:
-        # Filter clubs based on search
-        filtered_clubs = clubs_df[
-            clubs_df['name'].str.contains(search_query, case=False, na=False)
-        ].head(10)
+    # Search for clubs
+    if search_query and len(search_query) >= 2 and service:
+        associations_df = search_associations(service, search_query)
 
-        if not filtered_clubs.empty:
-            st.write("**Select your association:**")
-            for _, club in filtered_clubs.iterrows():
-                if st.button(f"{club['name']} - {club['address']}",
-                             key=f"club_{club['id']}",
-                             use_container_width=True):
-                    st.session_state.selected_club = club.to_dict()
-                    st.rerun()
+        if not associations_df.empty:
+            st.write("**Select your club:**")
+
+            # Display search results
+            for _, assoc in associations_df.iterrows():
+                display_name = f"{assoc['name']}"
+                if assoc.get('address'):
+                    display_name += f" - {assoc['address']}"
+
+                if st.button(display_name, key=f"club_{assoc['id']}", use_container_width=True):
+                    # Get full association details
+                    club_details = service.get_association_by_name(assoc['name'])
+                    if club_details:
+                        st.session_state.selected_club = club_details
+                        st.rerun()
         else:
-            st.warning("No associations found. Try different search terms.")
+            st.info("No clubs found. Try different search terms.")
 
-    # Show selected club and search button
+    # Show selected club and find sponsors
     if st.session_state.selected_club:
         club = st.session_state.selected_club
 
         st.success(f"✅ Selected: **{club['name']}** ({club.get('size_bucket', 'unknown')} size)")
 
         if st.button("🎯 Find Sponsors", type="primary", use_container_width=True):
-            with st.spinner("Searching for sponsors..."):
+            with st.spinner("Searching for matching sponsors..."):
                 try:
-                    sponsors = recommend_sponsors(
-                        club_id=club['id'],
-                        club_bucket=size_bucket,
+                    # Use the ML pipeline for recommendations
+                    sponsors = score_and_rank(
+                        association_id=club['id'],
+                        bucket=club.get('size_bucket', 'medium'),
                         max_distance=max_distance,
-                        top_n=10
+                        top_n=top_n
                     )
+
                     st.session_state.sponsors = sponsors
+
                     if sponsors:
                         st.success(f"Found {len(sponsors)} potential sponsors!")
                     else:
-                        st.warning("No sponsors found in this area.")
+                        st.warning("No sponsors found in the specified area.")
+
                 except Exception as e:
-                    st.error(f"Search failed: {e}")
+                    st.error(f"Error finding sponsors: {e}")
                     st.session_state.sponsors = []
 
-    # Single map showing everything
-    render_main_map(st.session_state.selected_club, st.session_state.sponsors)
+    # Display map
+    render_map(st.session_state.selected_club, st.session_state.sponsors)
 
-    # Show sponsor results
+    # Display sponsor results
     if st.session_state.sponsors:
-        st.subheader("🏢 Potential Sponsors")
+        st.subheader("🏢 Recommended Sponsors")
 
-        for i, sponsor in enumerate(st.session_state.sponsors):
-            with st.expander(f"{i + 1}. {sponsor['name']} - {sponsor['distance']:.1f}km away"):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Distance", f"{sponsor['distance']:.1f} km")
-                with col2:
-                    st.metric("Match Score", f"{sponsor['score']:.2f}")
-                with col3:
-                    st.button(f"Contact {sponsor['name']}",
-                              key=f"contact_{sponsor['id']}")
+        # Create tabs for different views
+        tab1, tab2 = st.tabs(["List View", "Details"])
+
+        with tab1:
+            # Display sponsors in a clean list
+            for i, sponsor in enumerate(st.session_state.sponsors, 1):
+                with st.container():
+                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+
+                    with col1:
+                        # Handle both name and id fallback
+                        sponsor_name = sponsor.get('name', f"Company #{sponsor.get('id', i)}")
+                        st.write(f"**{i}. {sponsor_name}**")
+                    with col2:
+                        st.metric("Distance", f"{sponsor['distance']:.1f} km")
+                    with col3:
+                        st.metric("Match", f"{sponsor['score'] * 100:.0f}%")
+                    with col4:
+                        if st.button("Contact", key=f"contact_{sponsor['id']}"):
+                            st.info(f"Contact feature coming soon for {sponsor.get('name', 'Company')}")
+
+                    st.divider()
+
+        with tab2:
+            # Detailed view with expandable sections
+            for sponsor in st.session_state.sponsors:
+                with st.expander(f"{sponsor['name']} - {sponsor['distance']:.1f}km"):
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.metric("Distance", f"{sponsor['distance']:.1f} km")
+                        st.metric("Coordinates", f"{sponsor['lat']:.4f}, {sponsor['lon']:.4f}")
+
+                    with col2:
+                        st.metric("Match Score", f"{sponsor['score'] * 100:.0f}%")
+                        st.button(
+                            f"📧 Contact {sponsor['name']}",
+                            key=f"detail_contact_{sponsor['id']}",
+                            use_container_width=True
+                        )
 
 
-def render_main_map(selected_club, sponsors):
-    """Render a single map showing club and sponsors."""
+def render_map(selected_club, sponsors):
+    """Render interactive map with club and sponsors."""
 
     # Default center on Gothenburg
     center_lat, center_lon = 57.7089, 11.9746
     zoom = 11
 
-    # If club is selected, center on it
+    # Center on selected club if available
     if selected_club and selected_club.get('lat') and selected_club.get('lon'):
         center_lat = float(selected_club['lat'])
         center_lon = float(selected_club['lon'])
         zoom = 12
 
-    # Create map
+    # Create map with colorful OpenStreetMap tiles
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=zoom,
-        tiles="OpenStreetMap"
+        tiles='OpenStreetMap'  # More colorful than CartoDB
     )
 
-    # Add club marker if selected
+    # Add club marker
     if selected_club and selected_club.get('lat') and selected_club.get('lon'):
         folium.Marker(
             location=[float(selected_club['lat']), float(selected_club['lon'])],
-            popup=folium.Popup(f"<b>{selected_club['name']}</b><br>{selected_club.get('address', '')}",
-                               max_width=200),
-            icon=folium.Icon(color='red', icon='home', prefix='fa'),
+            popup=folium.Popup(
+                f"<b>{selected_club['name']}</b><br>"
+                f"Members: {selected_club.get('member_count', 'N/A')}<br>"
+                f"{selected_club.get('address', '')}",
+                max_width=300
+            ),
+            icon=folium.Icon(color='purple', icon='star', prefix='fa'),
             tooltip=selected_club['name']
+        ).add_to(m)
+
+        # Add a circle around the club to show search radius
+        folium.Circle(
+            location=[float(selected_club['lat']), float(selected_club['lon'])],
+            radius=2000,  # 2km radius
+            color='purple',
+            fill=True,
+            fillOpacity=0.1
         ).add_to(m)
 
     # Add sponsor markers
     if sponsors:
         for sponsor in sponsors:
             if sponsor.get('lat') and sponsor.get('lon'):
-                # Color based on score
+                # More vibrant colors based on match score
                 if sponsor['score'] > 0.8:
+                    color = 'darkgreen'
+                    icon_color = 'white'
+                elif sponsor['score'] > 0.7:
                     color = 'green'
+                    icon_color = 'white'
+                elif sponsor['score'] > 0.6:
+                    color = 'lightgreen'
+                    icon_color = 'black'
                 elif sponsor['score'] > 0.5:
                     color = 'orange'
+                    icon_color = 'white'
+                elif sponsor['score'] > 0.4:
+                    color = 'beige'
+                    icon_color = 'black'
                 else:
-                    color = 'blue'
+                    color = 'lightblue'
+                    icon_color = 'black'
+
+                # Add colored circle around high-match sponsors
+                if sponsor['score'] > 0.7:
+                    folium.Circle(
+                        location=[float(sponsor['lat']), float(sponsor['lon'])],
+                        radius=200,
+                        color=color,
+                        fill=True,
+                        fillOpacity=0.3
+                    ).add_to(m)
 
                 folium.Marker(
                     location=[float(sponsor['lat']), float(sponsor['lon'])],
                     popup=folium.Popup(
-                        f"<b>{sponsor['name']}</b><br>"
-                        f"Distance: {sponsor['distance']:.1f}km<br>"
-                        f"Score: {sponsor['score']:.2f}",
-                        max_width=200
+                        f"<div style='width:200px'>"
+                        f"<h4 style='color:black'>{sponsor['name']}</h4>"
+                        f"<b>Distance:</b> {sponsor['distance']:.1f}km<br>"
+                        f"<b>Match:</b> {sponsor['score'] * 100:.0f}%<br>"
+                        f"<div style='background:{color};color:{icon_color};padding:5px;margin-top:5px;text-align:center;border-radius:5px'>"
+                        f"{'Excellent Match!' if sponsor['score'] > 0.8 else 'Good Match' if sponsor['score'] > 0.6 else 'Potential Match'}"
+                        f"</div>"
+                        f"</div>",
+                        max_width=250
                     ),
-                    icon=folium.Icon(color=color, icon='building', prefix='fa'),
-                    tooltip=f"{sponsor['name']} ({sponsor['distance']:.1f}km)"
+                    icon=folium.Icon(color=color, icon='briefcase' if sponsor['score'] > 0.7 else 'building',
+                                     prefix='fa'),
+                    tooltip=f"{sponsor['name']} ({sponsor['score'] * 100:.0f}% match)"
                 ).add_to(m)
 
     # Display map
-    st.subheader("📍 Map")
-    st_folium(m, width=700, height=500)
+    st.subheader("📍 Interactive Map")
+
+    # Try folium_static first (more reliable)
+    try:
+        folium_static(m, width=700, height=500)
+    except:
+        # Fallback to st_folium if static fails
+        st_folium(m, height=500, width=None, returned_objects=["last_object_clicked"])
 
 
 if __name__ == "__main__":
     render_search_page()
 
+
 ================================================================================
 FIL: sponsor_match/core/config.py
 ================================================================================
 
-#!/usr/bin/env python3
-"""
-sponsor_match/core/config.py
-
-Configuration settings for SponsorMatch AI
-"""
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from urllib.parse import quote_plus
 
-# Load environment variables from .env
 load_dotenv()
 
 # Base directories
 BASE_DIR = Path(__file__).parent.parent.resolve()
 DATA_DIR = BASE_DIR / "data"
 MODELS_DIR = BASE_DIR / "models"
-ASSETS_DIR = BASE_DIR / "assets"
 
-# App constants - these need to be available for UI imports
-APP_TITLE = os.getenv("APP_TITLE", "SponsorMatch AI")
-LOGO_PATH = os.getenv("LOGO_PATH", str(ASSETS_DIR / "logo.png"))
-STREAMLIT_PAGE_ICON = os.getenv("STREAMLIT_PAGE_ICON", "⚽")
 
-# Database URL - make it optional to avoid import crashes
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-# If no DATABASE_URL, try to build from components
-if not DATABASE_URL:
-    # Try to build from MySQL components
+# Database configuration - Fixed
+def get_database_url():
     mysql_user = os.getenv("MYSQL_USER", "sponsor_user")
     mysql_password = os.getenv("MYSQL_PASSWORD", "Sports-2025?!")
     mysql_host = os.getenv("MYSQL_HOST", "localhost")
     mysql_port = os.getenv("MYSQL_PORT", "3306")
     mysql_db = os.getenv("MYSQL_DB", "sponsor_registry")
 
-    DATABASE_URL = f"mysql+mysqlconnector://{mysql_user}:{mysql_password}@{mysql_host}:{mysql_port}/{mysql_db}"
+    # URL encode password to handle special characters
+    encoded_password = quote_plus(mysql_password)
 
-# Geocoding cache
-GEO_CACHE_PATH = BASE_DIR / ".geo_cache.sqlite3"
+    return f"mysql+pymysql://{mysql_user}:{encoded_password}@{mysql_host}:{mysql_port}/{mysql_db}"
 
-# Streamlit settings
-STREAMLIT_THEME = os.getenv("STREAMLIT_THEME", "light")
 
-# Logging
+DATABASE_URL = get_database_url()
+
+# App constants
+APP_TITLE = os.getenv("APP_TITLE", "SponsorMatch AI")
+LOGO_PATH = os.getenv("LOGO_PATH", str(BASE_DIR / "assets" / "logo.png"))
+STREAMLIT_PAGE_ICON = "⚽"
+
+# Other settings
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-
-# Clustering model settings
-CLUSTER_MODEL_FILE = os.getenv("CLUSTER_MODEL_FILE", "kmeans.pkl")
-CLUSTER_MODEL_PATH = MODELS_DIR / CLUSTER_MODEL_FILE
 N_CLUSTERS = int(os.getenv("N_CLUSTERS", 5))
 RANDOM_STATE = int(os.getenv("CLUSTER_RANDOM_STATE", 42))
-
-# API keys
-GEOCODING_API_KEY = os.getenv("GEOCODING_API_KEY")
 
 ================================================================================
 FIL: sponsor_match/core/db.py
 ================================================================================
 
-#!/usr/bin/env python3
-"""
-sponsor_match/core/db.py
-
-Provides a singleton SQLAlchemy engine for the application,
-loading credentials from the .env file and configuring pooling.
-"""
-
-import os
 import logging
+
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 
-# Load environment variables (e.g. DATABASE_URL, DB_POOL_SIZE) from .env
 load_dotenv()
-
-# Internal cache of the engine
 _engine = None
 
+
 def get_engine():
-    """
-    Return a singleton SQLAlchemy Engine.
-    Raises RuntimeError if DATABASE_URL is not set.
-    """
     global _engine
     if _engine is None:
-        db_url = os.getenv("DATABASE_URL")
-        if not db_url:
-            raise RuntimeError("DATABASE_URL environment variable not set")
+        # Get URL from config
+        from sponsor_match.core.config import DATABASE_URL
 
-        # Optional pool settings
-        pool_size = int(os.getenv("DB_POOL_SIZE", 5))
-        max_overflow = int(os.getenv("DB_MAX_OVERFLOW", 10))
+        if not DATABASE_URL:
+            raise RuntimeError("DATABASE_URL not configured")
 
         try:
             _engine = create_engine(
-                db_url,
-                pool_size=pool_size,
-                max_overflow=max_overflow,
+                DATABASE_URL,
+                pool_size=5,
+                max_overflow=10,
+                pool_recycle=3600,
+                pool_pre_ping=True,  # Test connections before use
                 echo=False,
             )
-            logging.info(
-                f"Created database engine (pool_size={pool_size}, max_overflow={max_overflow})"
-            )
+            logging.info("Database engine created successfully")
         except SQLAlchemyError as e:
             logging.error(f"Failed to create database engine: {e}")
             raise
-
     return _engine
 
 
@@ -1022,5 +1374,171 @@ def setup_logger(
         logger.addHandler(file_h)
 
     return logger
+
+
+================================================================================
+FIL: sponsor_match/ml/pipeline.py
+================================================================================
+
+import math
+from pathlib import Path
+
+import joblib
+import pandas as pd
+from sqlalchemy import text
+
+from sponsor_match.core.db import get_engine
+
+MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
+DEFAULT_KMEANS = MODELS_DIR / "kmeans.joblib"
+LARGE_KMEANS = MODELS_DIR / "kmeans_large.joblib"
+
+
+def haversine(lat1, lon1, lat2, lon2):
+    """Compute great-circle distance (km) between two points."""
+    R = 6371.0
+    phi1, lam1, phi2, lam2 = map(math.radians, (lat1, lon1, lat2, lon2))
+    dphi = phi2 - phi1
+    dlam = lam2 - lam1
+    a = (math.sin(dphi / 2) ** 2 +
+         math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2)
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def size_bucket_to_numeric(size_bucket):
+    """Convert size bucket to numeric value."""
+    mapping = {"small": 0, "medium": 1, "large": 2}
+    return mapping.get(size_bucket, 1)
+
+
+def load_models():
+    """Load clustering models with error handling."""
+    try:
+        models = {}
+        if DEFAULT_KMEANS.exists():
+            models["default"] = joblib.load(DEFAULT_KMEANS)
+        if LARGE_KMEANS.exists():
+            models["large"] = joblib.load(LARGE_KMEANS)
+        return models if models else None
+    except Exception as e:
+        print(f"Warning: Could not load models: {e}")
+        return None
+
+
+def safe_predict_cluster(model_data, features):
+    """Safely predict cluster with new model format."""
+    try:
+        # Handle new model format (dict with scaler and kmeans)
+        if isinstance(model_data, dict):
+            scaler = model_data.get('scaler')
+            kmeans = model_data.get('kmeans')
+
+            if scaler and kmeans:
+                # Scale features
+                features_scaled = scaler.transform([features[:2]])  # Use only lat/lon
+                # Predict cluster
+                return kmeans.predict(features_scaled)[0]
+
+        # Handle old model format (direct kmeans object)
+        elif hasattr(model_data, 'predict'):
+            # Check expected features
+            expected_features = getattr(model_data, 'n_features_in_', None)
+            if expected_features is None and hasattr(model_data, 'cluster_centers_'):
+                expected_features = model_data.cluster_centers_.shape[1]
+
+            if expected_features and len(features) != expected_features:
+                print(f"Feature mismatch: model expects {expected_features}, got {len(features)}")
+                # Pad or truncate features to match
+                if len(features) < expected_features:
+                    features = features + [0] * (expected_features - len(features))
+                else:
+                    features = features[:expected_features]
+
+            return model_data.predict([features])[0]
+
+    except Exception as e:
+        print(f"Clustering prediction failed: {e}")
+        return None
+
+
+def score_and_rank(association_id, bucket, max_distance=50.0, top_n=10):
+    """Score and rank potential sponsors with robust error handling."""
+    engine = get_engine()
+
+    try:
+        with engine.connect() as conn:
+            # Get association
+            assoc_df = pd.read_sql(
+                text("SELECT id,name,lat,lon,size_bucket,member_count FROM associations WHERE id=:i"),
+                conn, params={"i": association_id}
+            )
+
+            # Get companies with all needed fields
+            comps_df = pd.read_sql(
+                "SELECT id,name,lat,lon,size_bucket,revenue_ksek,employees,industry FROM companies WHERE lat IS NOT NULL AND lon IS NOT NULL",
+                conn
+            )
+    except Exception as e:
+        print(f"Database error: {e}")
+        return []
+
+    if assoc_df.empty:
+        return []
+
+    club = assoc_df.iloc[0]
+
+    # Load models
+    models = load_models()
+    club_cluster = None
+
+    if models:
+        model_key = "large" if bucket == "large" else "default"
+        model = models.get(model_key)
+
+        if model:
+            # Prepare features (lat, lon)
+            club_features = [club.lat, club.lon]
+            club_cluster = safe_predict_cluster(model, club_features)
+
+    recommendations = []
+    for _, company in comps_df.iterrows():
+        try:
+            distance = haversine(club.lat, club.lon, company.lat, company.lon)
+            if distance > max_distance:
+                continue
+
+            # Size matching bonus
+            size_bonus = 1.2 if company.size_bucket == bucket else 1.0
+
+            # Cluster matching bonus (if clustering worked)
+            comp_cluster_bonus = 1.0
+            if models and club_cluster is not None:
+                model_key = "large" if company.size_bucket == "large" else "default"
+                model = models.get(model_key)
+                if model:
+                    comp_features = [company.lat, company.lon]
+                    comp_cluster = safe_predict_cluster(model, comp_features)
+                    if comp_cluster is not None and comp_cluster == club_cluster:
+                        comp_cluster_bonus = 1.3
+
+            # Calculate final score
+            score = (1.0 / (1.0 + distance)) * size_bonus * comp_cluster_bonus
+
+            recommendations.append({
+                "id": int(company.id),
+                "name": str(company['name']),  # Fix: use column access instead of attribute
+                "lat": float(company.lat),
+                "lon": float(company.lon),
+                "distance": round(distance, 2),
+                "score": round(score, 3)
+            })
+
+        except Exception as e:
+            print(f"Error processing company {company.get('name', 'unknown')}: {e}")
+            continue
+
+    # Sort by score and return top N
+    recommendations.sort(key=lambda x: x["score"], reverse=True)
+    return recommendations[:top_n]
 
 

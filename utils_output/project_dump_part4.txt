@@ -1,174 +1,4 @@
 ================================================================================
-FIL: sponsor_match/ml/pipeline.py
-================================================================================
-
-import math
-import joblib
-import pandas as pd
-from pathlib import Path
-from sqlalchemy import text
-from sponsor_match.core.db import get_engine
-
-# point to your two existing models
-MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
-DEFAULT_KMEANS = MODELS_DIR / "kmeans.joblib"
-LARGE_KMEANS = MODELS_DIR / "kmeans_large.joblib"
-
-
-def haversine(lat1, lon1, lat2, lon2):
-    """Compute great-circle distance (km) between two points."""
-    R = 6371.0
-    phi1, lam1, phi2, lam2 = map(math.radians, (lat1, lon1, lat2, lon2))
-    dphi = phi2 - phi1
-    dlam = lam2 - lam1
-    a = (math.sin(dphi / 2) ** 2 +
-         math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2)
-    return 2 * R * math.asin(math.sqrt(a))
-
-
-def size_bucket_to_numeric(size_bucket):
-    """Convert size bucket to numeric value for clustering."""
-    mapping = {"small": 0, "medium": 1, "large": 2}
-    return mapping.get(size_bucket, 1)  # default to medium
-
-
-def load_models():
-    """Load your two pre-trained KMeans models."""
-    try:
-        return {
-            "default": joblib.load(DEFAULT_KMEANS),
-            "large": joblib.load(LARGE_KMEANS)
-        }
-    except FileNotFoundError as e:
-        print(f"Warning: Could not load models: {e}")
-        return None
-
-
-def score_and_rank(assoc_id, assoc_bucket,
-                   max_distance=50.0, top_n=10):
-    """
-    1) Fetch the association by ID.
-    2) Fetch all companies.
-    3) Compute distance, size-bucket bonus, cluster bonus.
-    4) Return top_n by composite score.
-    """
-    engine = get_engine()
-    with engine.connect() as conn:
-        club_df = pd.read_sql(
-            text(
-                "SELECT id,name,lat,lon,size_bucket,member_count "
-                "FROM associations WHERE id=:i"
-            ), conn, params={"i": assoc_id}
-        )
-        comps_df = pd.read_sql(
-            "SELECT id,name,lat,lon,size_bucket FROM companies",
-            conn
-        )
-
-    if club_df.empty:
-        return []
-
-    club = club_df.iloc[0]
-
-    # Load models - handle case where they don't exist or have wrong dimensions
-    kms = load_models()
-    if not kms:
-        # Fallback: no clustering, just distance-based ranking
-        return _fallback_distance_ranking(club, comps_df, max_distance, top_n)
-
-    km = kms["large"] if assoc_bucket == "large" else kms["default"]
-
-    # Determine the number of features the model expects
-    try:
-        n_features = km.n_features_in_
-    except AttributeError:
-        # Fallback for older sklearn versions
-        n_features = km.cluster_centers_.shape[1]
-
-    # Prepare features based on what the model expects
-    if n_features == 2:
-        club_features = [club.lat, club.lon]
-    elif n_features == 3:
-        # Add size bucket as third feature
-        size_numeric = size_bucket_to_numeric(getattr(club, 'size_bucket', assoc_bucket))
-        club_features = [club.lat, club.lon, size_numeric]
-    else:
-        print(f"Warning: Model expects {n_features} features, falling back to distance ranking")
-        return _fallback_distance_ranking(club, comps_df, max_distance, top_n)
-
-    try:
-        club_lbl = km.predict([club_features])[0]
-    except Exception as e:
-        print(f"Warning: Clustering prediction failed: {e}, falling back to distance ranking")
-        return _fallback_distance_ranking(club, comps_df, max_distance, top_n)
-
-    recs = []
-    for _, c in comps_df.iterrows():
-        if pd.isna(c.lat) or pd.isna(c.lon):
-            continue
-        d = haversine(club.lat, club.lon, c.lat, c.lon)
-        if d > max_distance:
-            continue
-
-        size_bonus = 1.2 if c.size_bucket == assoc_bucket else 1.0
-
-        # Prepare company features for clustering
-        if n_features == 2:
-            comp_features = [c.lat, c.lon]
-        elif n_features == 3:
-            comp_size_numeric = size_bucket_to_numeric(c.size_bucket)
-            comp_features = [c.lat, c.lon, comp_size_numeric]
-        else:
-            comp_features = [c.lat, c.lon]  # default fallback
-
-        try:
-            comp_lbl = km.predict([comp_features])[0]
-            cluster_bonus = 1.3 if comp_lbl == club_lbl else 1.0
-        except (ValueError, AttributeError):
-            cluster_bonus = 1.0  # neutral if clustering fails
-
-        score = (1.0 / (1.0 + d)) * size_bonus * cluster_bonus
-        recs.append({
-            "id": int(c.id),
-            "name": c.name,
-            "lat": float(c.lat),
-            "lon": float(c.lon),
-            "distance": d,
-            "score": score
-        })
-
-    recs.sort(key=lambda x: x["score"], reverse=True)
-    return recs[:top_n]
-
-
-def _fallback_distance_ranking(club, comps_df, max_distance, top_n):
-    """Fallback ranking based only on distance and size matching."""
-    recs = []
-    club_size = getattr(club, 'size_bucket', 'medium')
-
-    for _, c in comps_df.iterrows():
-        if pd.isna(c.lat) or pd.isna(c.lon):
-            continue
-        d = haversine(club.lat, club.lon, c.lat, c.lon)
-        if d > max_distance:
-            continue
-
-        size_bonus = 1.2 if c.size_bucket == club_size else 1.0
-        score = (1.0 / (1.0 + d)) * size_bonus
-
-        recs.append({
-            "id": int(c.id),
-            "name": c.name,
-            "lat": float(c.lat),
-            "lon": float(c.lon),
-            "distance": d,
-            "score": score
-        })
-
-    recs.sort(key=lambda x: x["score"], reverse=True)
-    return recs[:top_n]
-
-================================================================================
 FIL: sponsor_match/models/__init__.py
 ================================================================================
 
@@ -370,16 +200,59 @@ FIL: sponsor_match/models/entities.py
 """
 models/entities.py
 ------------------
-Domain entity classes for SponsorMatch AI.
+Domain entity classes for SponsorMatch AI with proper SQLAlchemy ORM mappings.
 """
 
+from sqlalchemy import Column, Integer, String, Float, Enum
+from sqlalchemy.ext.declarative import declarative_base
+
+Base = declarative_base()
+
+
+class Association(Base):
+    """
+    Represents a sports club/association as stored in the `associations` table.
+    """
+    __tablename__ = 'associations'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(120))
+    member_count = Column(Integer)
+    address = Column(String(255))
+    lat = Column(Float)
+    lon = Column(Float)
+    size_bucket = Column(Enum('small', 'medium', 'large'))
+    founded_year = Column(Integer)
+
+
+class Company(Base):
+    """
+    Represents a company as stored in the `companies` table.
+    """
+    __tablename__ = 'companies'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    orgnr = Column(String(10))
+    name = Column(String(200))
+    revenue_ksek = Column(Float)
+    employees = Column(Integer)
+    year = Column(Integer)
+    size_bucket = Column(Enum('small', 'medium', 'large'))
+    industry = Column(String(120))
+    lat = Column(Float)
+    lon = Column(Float)
+
+
+# Legacy dataclasses for backward compatibility
 from dataclasses import dataclass
 from typing import Optional
+
 
 @dataclass
 class Club:
     """
-    Represents a sports club as loaded from the `clubs` table.
+    Legacy dataclass representation of a sports club.
+    Use Association ORM model for database operations.
     """
     id: int
     name: str
@@ -392,9 +265,10 @@ class Club:
 
 
 @dataclass
-class Company:
+class CompanyData:
     """
-    Represents a company as loaded from the `companies` table.
+    Legacy dataclass representation of a company.
+    Use Company ORM model for database operations.
     """
     id: int
     orgnr: str
@@ -406,7 +280,6 @@ class Company:
     lat: Optional[float]
     lon: Optional[float]
     industry: str
-
 
 ================================================================================
 FIL: sponsor_match/models/features.py
@@ -810,78 +683,820 @@ FIL: sponsor_match/data/__init__.py
 
 
 ================================================================================
-FIL: sponsor_match/data/ingest_associations.py
+FIL: sponsor_match/data/geocode_with_municipality.py
 ================================================================================
 
 #!/usr/bin/env python3
 """
-sponsor_match/data/ingest_associations.py
+sponsor_match/data/geocode_with_municipality.py
 
-Reads an enriched associations CSV and ingests it into the MySQL database.
+Comprehensive geocoding system using Göteborg municipality data.
+Handles associations and companies with various address formats.
 """
 
-import argparse
 import logging
+import re
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional, Tuple, Dict, List
+
+import numpy as np
+import pandas as pd
+from fuzzywuzzy import fuzz, process
+from geopy.extra.rate_limiter import RateLimiter
+from geopy.geocoders import Nominatim
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GeocodingResult:
+    """Store geocoding results with confidence metadata."""
+    lat: float
+    lon: float
+    district: str
+    confidence: str  # 'exact', 'fuzzy', 'postcode', 'box', 'external'
+    match_details: str
+    original_address: str
+
+
+class MunicipalityGeocoder:
+    """
+    Intelligent geocoder using Göteborg municipality data as primary source.
+    Falls back to external services only when necessary.
+    """
+
+    def __init__(self, municipality_csv_path: str):
+        """Initialize with municipality data."""
+        logger.info("Loading municipality data...")
+        # Try reading with UTF-8 encoding first, fall back to Latin-1 if needed
+        try:
+            self.muni_df = pd.read_csv(municipality_csv_path, encoding='utf-8')
+        except UnicodeDecodeError:
+            logger.warning("UTF-8 decoding failed, trying Latin-1...")
+            self.muni_df = pd.read_csv(municipality_csv_path, encoding='latin-1')
+
+        # Fix encoding issues if they exist
+        self._fix_encoding_issues()
+
+        # Create various indices for efficient lookups
+        self._prepare_indices()
+
+        # Initialize external geocoder as fallback
+        geolocator = Nominatim(user_agent="sponsor_match_geocoder")
+        self.external_geocoder = RateLimiter(geolocator.geocode, min_delay_seconds=1)
+
+        # Cache for Box addresses (will be populated on first use)
+        self.box_address_cache = {}
+
+        # Settings for controlling external geocoding
+        self.use_external_geocoding = False  # Disable by default to avoid timeouts
+
+    def _fix_encoding_issues(self):
+        """Fix common UTF-8/Latin-1 encoding issues in Swedish text."""
+        # Common misencoded Swedish character patterns
+        encoding_fixes = {
+            'ã¥': 'å', 'Ã¥': 'Å',
+            'ã¤': 'ä', 'Ã¤': 'Ä',
+            'ã¶': 'ö', 'Ã¶': 'Ö',
+            'ã©': 'é', 'Ã©': 'É',
+            'ã': 'à', 'Ã': 'À'
+        }
+
+        # Apply fixes to string columns
+        for col in self.muni_df.columns:
+            if self.muni_df[col].dtype == 'object':  # String columns
+                for wrong, right in encoding_fixes.items():
+                    self.muni_df[col] = self.muni_df[col].str.replace(wrong, right, regex=False)
+
+        logger.info("Applied encoding fixes to municipality data")
+
+    def _prepare_indices(self):
+        """Prepare various indices for fast lookups."""
+        # Clean and standardize street names
+        self.muni_df['street_clean'] = (
+            self.muni_df['STREET']
+            .str.lower()
+            .str.strip()
+            .fillna('')
+        )
+
+        # Create full address for matching
+        self.muni_df['full_address'] = (
+                self.muni_df['street_clean'] + ' ' +
+                self.muni_df['NUMBER'].fillna('').astype(str)
+        ).str.strip()
+
+        # Group by street for street-level lookups
+        self.street_groups = self.muni_df.groupby('street_clean')
+
+        # Create postcode index
+        self.postcode_groups = self.muni_df.groupby('POSTCODE')
+
+        # Get unique streets for fuzzy matching
+        self.unique_streets = self.muni_df['street_clean'].unique()
+
+        logger.info(f"Indexed {len(self.muni_df)} addresses across {len(self.unique_streets)} streets")
+
+    def parse_address(self, raw_address: str) -> Dict[str, str]:
+        """
+        Parse various address formats into components.
+        Handles contact names, Box addresses, and standard formats.
+        """
+        # Handle None or empty addresses
+        if not raw_address or pd.isna(raw_address):
+            return {'street': '', 'number': '', 'postcode': '', 'city': ''}
+
+        address = str(raw_address).strip()
+
+        # Check if it's a Box address
+        box_match = re.search(r'Box\s*(\d+)', address, re.IGNORECASE)
+        if box_match:
+            return {
+                'street': 'BOX',
+                'number': box_match.group(1),
+                'postcode': self._extract_postcode(address),
+                'city': self._extract_city(address),
+                'is_box': True
+            }
+
+        # Split by comma to separate components
+        parts = [p.strip() for p in address.split(',')]
+
+        # For associations, the middle part is often a contact name - skip it
+        # Pattern: Street, ContactName, PostCode, City
+        if len(parts) >= 4:
+            street_part = parts[0]
+            # Skip parts[1] as it's likely a contact name
+            # Reconstruct address without contact name
+            address = f"{parts[0]}, {parts[2]}, {parts[3]}"
+        elif len(parts) >= 1:
+            street_part = parts[0]
+        else:
+            street_part = ''
+
+        # Extract postcode (5 digits, possibly with space)
+        postcode = self._extract_postcode(address)
+
+        # Extract house number from street part
+        street, number = self._split_street_number(street_part)
+
+        # Last part after postcode is usually city
+        city = self._extract_city(address)
+
+        return {
+            'street': street,
+            'number': number,
+            'postcode': postcode,
+            'city': city,
+            'is_box': False
+        }
+
+    def _extract_postcode(self, address: str) -> str:
+        """Extract Swedish postcode from address."""
+        # Match 5 digits with optional space (e.g., "412 76" or "41276")
+        match = re.search(r'(\d{3}\s?\d{2})', address)
+        if match:
+            # Normalize to no-space format
+            return match.group(1).replace(' ', '')
+        return ''
+
+    def _extract_city(self, address: str) -> str:
+        """Extract city name from address."""
+        # Common districts/cities in Göteborg area
+        cities = ['Göteborg', 'GÖTEBORG', 'Mölndal', 'MÖLNDAL', 'Partille', 'PARTILLE',
+                  'Angered', 'ANGERED', 'Västra Frölunda', 'VÄSTRA FRÖLUNDA',
+                  'Hisings Backa', 'HISINGS BACKA', 'Torslanda', 'TORSLANDA']
+
+        for city in cities:
+            if city in address:
+                return city.title()
+        return 'Göteborg'  # Default
+
+    def _split_street_number(self, street_part: str) -> Tuple[str, str]:
+        """Split street name and house number."""
+        # Try to find number at the end
+        match = re.match(r'^(.+?)\s+(\d+\s*[A-Za-z]?)$', street_part)
+        if match:
+            return match.group(1).strip(), match.group(2).strip()
+
+        # No number found
+        return street_part.strip(), ''
+
+    def geocode_address(self, raw_address: str) -> Optional[GeocodingResult]:
+        """
+        Main geocoding method with multiple fallback strategies.
+        """
+        # Parse the address
+        parsed = self.parse_address(raw_address)
+
+        # Handle Box addresses specially
+        if parsed.get('is_box'):
+            return self._geocode_box_address(parsed, raw_address)
+
+        # Try exact match first
+        result = self._try_exact_match(parsed, raw_address)
+        if result:
+            return result
+
+        # Try fuzzy street matching
+        result = self._try_fuzzy_match(parsed, raw_address)
+        if result:
+            return result
+
+        # Try postcode-based geocoding
+        result = self._try_postcode_match(parsed, raw_address)
+        if result:
+            return result
+
+        # Last resort: external geocoding
+        return self._try_external_geocoding(raw_address)
+
+    def _try_exact_match(self, parsed: Dict, original: str) -> Optional[GeocodingResult]:
+        """Try exact street + number match."""
+        street_clean = parsed['street'].lower().strip()
+        number = parsed['number']
+
+        if not street_clean:
+            return None
+
+        # Get all addresses on this street
+        if street_clean in self.street_groups.groups:
+            street_data = self.street_groups.get_group(street_clean)
+
+            if number:
+                # Try exact number match
+                exact_match = street_data[street_data['NUMBER'].astype(str) == str(number)]
+                if not exact_match.empty:
+                    row = exact_match.iloc[0]
+                    return GeocodingResult(
+                        lat=row['LAT'],
+                        lon=row['LON'],
+                        district=row['DISTRICT'],
+                        confidence='exact',
+                        match_details=f"Exact match: {row['STREET']} {row['NUMBER']}",
+                        original_address=original
+                    )
+
+            # No number or no exact match - use street midpoint
+            return self._get_street_midpoint(street_data, parsed, original)
+
+        return None
+
+    def _try_fuzzy_match(self, parsed: Dict, original: str) -> Optional[GeocodingResult]:
+        """Try fuzzy matching for street names."""
+        street_clean = parsed['street'].lower().strip()
+        if not street_clean or len(street_clean) < 3:
+            return None
+
+        # Find best matching street
+        best_match = process.extractOne(
+            street_clean,
+            self.unique_streets,
+            scorer=fuzz.ratio,
+            score_cutoff=70  # Lower threshold to handle encoding issues
+        )
+
+        if best_match:
+            matched_street, score = best_match[0], best_match[1]
+            street_data = self.street_groups.get_group(matched_street)
+
+            logger.info(f"Fuzzy matched '{street_clean}' to '{matched_street}' (score: {score})")
+
+            # Try to find specific number or use midpoint
+            if parsed['number']:
+                number_match = street_data[street_data['NUMBER'].astype(str) == str(parsed['number'])]
+                if not number_match.empty:
+                    row = number_match.iloc[0]
+                    return GeocodingResult(
+                        lat=row['LAT'],
+                        lon=row['LON'],
+                        district=row['DISTRICT'],
+                        confidence='fuzzy',
+                        match_details=f"Fuzzy match: {row['STREET']} {row['NUMBER']} (score: {score})",
+                        original_address=original
+                    )
+
+            return self._get_street_midpoint(street_data, parsed, original, confidence='fuzzy')
+
+        return None
+
+    def _get_street_midpoint(self, street_data: pd.DataFrame, parsed: Dict,
+                             original: str, confidence: str = 'exact') -> GeocodingResult:
+        """Calculate midpoint of all addresses on a street."""
+        # Use the centroid of all points on the street
+        lat_mean = street_data['LAT'].mean()
+        lon_mean = street_data['LON'].mean()
+
+        # Use most common district
+        district = street_data['DISTRICT'].mode().iloc[0] if not street_data['DISTRICT'].mode().empty else ''
+
+        return GeocodingResult(
+            lat=lat_mean,
+            lon=lon_mean,
+            district=district,
+            confidence=confidence,
+            match_details=f"Street midpoint: {street_data.iloc[0]['STREET']} ({len(street_data)} addresses)",
+            original_address=original
+        )
+
+    def _try_postcode_match(self, parsed: Dict, original: str) -> Optional[GeocodingResult]:
+        """Use postcode centroid as fallback."""
+        postcode = parsed['postcode']
+        if not postcode:
+            return None
+
+        if postcode in self.postcode_groups.groups:
+            postcode_data = self.postcode_groups.get_group(postcode)
+
+            # Use centroid of all addresses in this postcode
+            lat_mean = postcode_data['LAT'].mean()
+            lon_mean = postcode_data['LON'].mean()
+            district = postcode_data['DISTRICT'].mode().iloc[0] if not postcode_data['DISTRICT'].mode().empty else ''
+
+            return GeocodingResult(
+                lat=lat_mean,
+                lon=lon_mean,
+                district=district,
+                confidence='postcode',
+                match_details=f"Postcode centroid: {postcode} ({len(postcode_data)} addresses)",
+                original_address=original
+            )
+
+        return None
+
+    def _geocode_box_address(self, parsed: Dict, original: str) -> Optional[GeocodingResult]:
+        """
+        Handle Box addresses. In Sweden, these are typically at post offices.
+        We'll need external geocoding for these.
+        """
+        box_number = parsed['number']
+        postcode = parsed['postcode']
+        city = parsed['city']
+
+        # Create a searchable address
+        search_address = f"Box {box_number}, {postcode} {city}, Sverige"
+
+        # Check cache first
+        if search_address in self.box_address_cache:
+            cached = self.box_address_cache[search_address]
+            return GeocodingResult(
+                lat=cached['lat'],
+                lon=cached['lon'],
+                district=cached.get('district', ''),
+                confidence='box',
+                match_details=f"Box address (cached): {search_address}",
+                original_address=original
+            )
+
+        # Try external geocoding
+        result = self._try_external_geocoding(search_address)
+        if result:
+            result.confidence = 'box'
+            result.match_details = f"Box address (geocoded): {search_address}"
+            # Cache for future use
+            self.box_address_cache[search_address] = {
+                'lat': result.lat,
+                'lon': result.lon,
+                'district': result.district
+            }
+
+        return result
+
+    def _try_external_geocoding(self, address: str) -> Optional[GeocodingResult]:
+        """Use external geocoding service as last resort."""
+        # Check if external geocoding is enabled
+        if not self.use_external_geocoding:
+            logger.debug(f"External geocoding disabled, skipping: {address}")
+            return None
+
+        try:
+            # Add country for better results
+            if "Sverige" not in address and "Sweden" not in address:
+                address += ", Sverige"
+
+            location = self.external_geocoder(address)
+            if location:
+                # Try to determine district from coordinates
+                district = self._find_district_for_coords(location.latitude, location.longitude)
+
+                return GeocodingResult(
+                    lat=location.latitude,
+                    lon=location.longitude,
+                    district=district,
+                    confidence='external',
+                    match_details=f"External geocoding: {location.address}",
+                    original_address=address
+                )
+        except Exception as e:
+            logger.error(f"External geocoding failed for '{address}': {e}")
+
+        return None
+
+    def _find_district_for_coords(self, lat: float, lon: float, radius_km: float = 1.0) -> str:
+        """Find district for given coordinates by finding nearest address."""
+        # Calculate distances to all addresses (simplified, not haversine)
+        self.muni_df['dist'] = np.sqrt(
+            (self.muni_df['LAT'] - lat) ** 2 +
+            (self.muni_df['LON'] - lon) ** 2
+        )
+
+        # Find nearest address
+        nearest = self.muni_df.nsmallest(1, 'dist')
+        if not nearest.empty:
+            return nearest.iloc[0]['DISTRICT']
+
+        return ''
+
+    def geocode_batch(self, addresses: List[str], desc: str = "Geocoding") -> List[Optional[GeocodingResult]]:
+        """Geocode a batch of addresses with progress tracking."""
+        results = []
+
+        logger.info(f"Starting batch geocoding of {len(addresses)} addresses...")
+
+        for i, address in enumerate(addresses):
+            if i % 100 == 0:
+                logger.info(f"{desc}: {i}/{len(addresses)} ({i / len(addresses) * 100:.1f}%)")
+
+            result = self.geocode_address(address)
+            results.append(result)
+
+            # Small delay to prevent overwhelming external service
+            if result and result.confidence == 'external':
+                time.sleep(0.1)
+
+        # Summary statistics
+        confidences = [r.confidence for r in results if r]
+        for conf in ['exact', 'fuzzy', 'postcode', 'box', 'external']:
+            count = confidences.count(conf)
+            if count > 0:
+                logger.info(f"  {conf}: {count} ({count / len(addresses) * 100:.1f}%)")
+
+        failed = len([r for r in results if r is None])
+        if failed > 0:
+            logger.warning(f"  Failed: {failed} ({failed / len(addresses) * 100:.1f}%)")
+
+        return results
+
+
+def geocode_associations(associations_csv: str, municipality_csv: str, output_csv: str):
+    """Geocode all associations and save results."""
+    logger.info("Loading associations...")
+    assoc_df = pd.read_csv(associations_csv, encoding='utf-8')
+
+    # Initialize geocoder
+    geocoder = MunicipalityGeocoder(municipality_csv)
+
+    # Extract addresses (handling the specific format)
+    addresses = []
+    for _, row in assoc_df.iterrows():
+        # Combine address components, skipping Co Adress
+        address_parts = []
+        if pd.notna(row.get('Adress')):
+            address_parts.append(str(row['Adress']))
+        if pd.notna(row.get('Post Nr')):
+            address_parts.append(str(row['Post Nr']))
+        if pd.notna(row.get('Postort')):
+            address_parts.append(str(row['Postort']))
+
+        address = ', '.join(address_parts)
+        addresses.append(address)
+
+    # Geocode all addresses
+    results = geocoder.geocode_batch(addresses, desc="Associations")
+
+    # Add results to dataframe
+    assoc_df['lat'] = [r.lat if r else None for r in results]
+    assoc_df['lon'] = [r.lon if r else None for r in results]
+    assoc_df['district'] = [r.district if r else None for r in results]
+    assoc_df['geocoding_confidence'] = [r.confidence if r else 'failed' for r in results]
+    assoc_df['geocoding_details'] = [r.match_details if r else 'Geocoding failed' for r in results]
+
+    # Save results
+    assoc_df.to_csv(output_csv, index=False, encoding='utf-8')
+    logger.info(f"Saved geocoded associations to {output_csv}")
+
+    # Report success rate
+    success_rate = (assoc_df['lat'].notna().sum() / len(assoc_df)) * 100
+    logger.info(f"Successfully geocoded {success_rate:.1f}% of associations")
+
+
+def geocode_companies(companies_csv: str, municipality_csv: str, output_csv: str):
+    """Geocode all companies and save results."""
+    logger.info("Loading companies...")
+    comp_df = pd.read_csv(companies_csv, encoding='utf-8')
+
+    # Initialize geocoder
+    geocoder = MunicipalityGeocoder(municipality_csv)
+
+    # Extract addresses
+    addresses = comp_df['registered_address'].tolist()
+
+    # Geocode all addresses
+    results = geocoder.geocode_batch(addresses, desc="Companies")
+
+    # Add results to dataframe
+    comp_df['lat'] = [r.lat if r else None for r in results]
+    comp_df['lon'] = [r.lon if r else None for r in results]
+    comp_df['geocoding_confidence'] = [r.confidence if r else 'failed' for r in results]
+    comp_df['geocoding_details'] = [r.match_details if r else 'Geocoding failed' for r in results]
+
+    # Verify district matches
+    comp_df['district_verified'] = [
+        r.district == row['district'] if r and r.district else False
+        for r, (_, row) in zip(results, comp_df.iterrows())
+    ]
+
+    # Save results
+    comp_df.to_csv(output_csv, index=False, encoding='utf-8')
+    logger.info(f"Saved geocoded companies to {output_csv}")
+
+    # Report success rate
+    success_rate = (comp_df['lat'].notna().sum() / len(comp_df)) * 100
+    logger.info(f"Successfully geocoded {success_rate:.1f}% of companies")
+
+
+def main():
+    """Main function to geocode both associations and companies."""
+    # Set up paths
+    project_root = Path(__file__).parent.parent.parent
+    data_dir = project_root / "data"
+
+    municipality_csv = data_dir / "municipality_of_goteborg.csv"
+    associations_csv = data_dir / "gothenburg_associations.csv"
+    companies_csv = data_dir / "gothenburg_companies_addresses.csv"
+
+    # Output files
+    associations_output = data_dir / "associations_geocoded.csv"
+    companies_output = data_dir / "companies_geocoded.csv"
+
+    # Geocode associations
+    logger.info("=" * 50)
+    logger.info("GEOCODING ASSOCIATIONS")
+    logger.info("=" * 50)
+    geocode_associations(str(associations_csv), str(municipality_csv), str(associations_output))
+
+    # Geocode companies
+    logger.info("\n" + "=" * 50)
+    logger.info("GEOCODING COMPANIES")
+    logger.info("=" * 50)
+    geocode_companies(str(companies_csv), str(municipality_csv), str(companies_output))
+
+    logger.info("\nGeocoding complete!")
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FIL: sponsor_match/data/ingest_associations_fixed.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+Ingest Gothenburg associations with geocoding and proper data cleaning.
+"""
+
+import logging
+import time
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy.exc import SQLAlchemyError
+from geopy.geocoders import Nominatim
+from geopy.extra.rate_limiter import RateLimiter
+from sqlalchemy import text
+
 from sponsor_match.core.db import get_engine
-from dotenv import load_dotenv
+from sponsor_match.models.entities import Base, Association
 
-def init_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s"
-    )
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def ingest(csv_path: Path):
-    """
-    Load the CSV at csv_path into the `associations` table.
-    Replaces any existing data in `associations`.
-    """
-    if not csv_path.exists():
-        logging.error(f"CSV file not found: {csv_path}")
-        return
 
-    try:
-        df = pd.read_csv(csv_path)
-        logging.info(f"Loaded {len(df)} rows from {csv_path}")
-    except Exception as e:
-        logging.error(f"Failed to read CSV {csv_path}: {e}")
-        return
+def clean_associations_data(df):
+    """Clean and prepare associations data."""
+    # Create full address
+    df['full_address'] = df['Adress'].fillna('') + ', ' + \
+                         df['Post Nr'].fillna('').astype(str) + ' ' + \
+                         df['Postort'].fillna('')
 
-    engine = get_engine()
-    try:
-        with engine.begin() as conn:
-            df.to_sql(
-                name="associations",
-                con=conn,
-                if_exists="replace",
-                index=False,
-                method="multi",      # batch inserts if available
-            )
-        logging.info(f"Successfully wrote {len(df)} rows to `associations` table.")
-    except SQLAlchemyError as e:
-        logging.error(f"Database error during ingest: {e}")
-    except Exception as e:
-        logging.error(f"Unexpected error during ingest: {e}")
+    # Clean up whitespace
+    df['full_address'] = df['full_address'].str.strip().str.replace('  ', ' ')
+
+    # Add ", Sverige" for better geocoding
+    df['full_address'] = df['full_address'] + ', Sverige'
+
+    return df
+
+
+def geocode_addresses(df, limit=50):
+    """Geocode addresses with rate limiting."""
+    geolocator = Nominatim(user_agent="sponsormatch_geocoder")
+    geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
+
+    geocoded = []
+
+    for idx, row in df.iterrows():
+        if idx >= limit:  # Limit for testing
+            break
+
+        try:
+            location = geocode(row['full_address'])
+            if location:
+                geocoded.append({
+                    'name': row['Namn'],
+                    'address': row['full_address'],
+                    'lat': location.latitude,
+                    'lon': location.longitude
+                })
+                logger.info(f"Geocoded: {row['Namn']} -> {location.latitude}, {location.longitude}")
+            else:
+                # Try with just city name
+                location = geocode(f"{row['Postort']}, Sverige")
+                if location:
+                    geocoded.append({
+                        'name': row['Namn'],
+                        'address': row['full_address'],
+                        'lat': location.latitude,
+                        'lon': location.longitude
+                    })
+                    logger.info(f"Geocoded (city): {row['Namn']} -> {location.latitude}, {location.longitude}")
+                else:
+                    logger.warning(f"Could not geocode: {row['Namn']}")
+
+        except Exception as e:
+            logger.error(f"Geocoding error for {row['Namn']}: {e}")
+            time.sleep(2)  # Extra delay on error
+
+    return pd.DataFrame(geocoded)
+
+
+def assign_size_buckets(df):
+    """Assign size buckets based on name patterns and random distribution."""
+    import random
+
+    # Keywords that suggest size
+    large_keywords = ['IFK', 'GAIS', 'BK Häcken', 'Örgryte']
+    small_keywords = ['FF', 'Futsal', 'Ungdom']
+
+    def get_size_bucket(name):
+        name_upper = name.upper()
+
+        # Check for large club indicators
+        for keyword in large_keywords:
+            if keyword.upper() in name_upper:
+                return 'large'
+
+        # Check for small club indicators
+        for keyword in small_keywords:
+            if keyword.upper() in name_upper:
+                return 'small'
+
+        # Random distribution for others
+        rand = random.random()
+        if rand < 0.3:
+            return 'small'
+        elif rand < 0.7:
+            return 'medium'
+        else:
+            return 'large'
+
+    df['size_bucket'] = df['name'].apply(get_size_bucket)
+
+    # Assign member counts based on size
+    def get_member_count(size):
+        if size == 'small':
+            return random.randint(50, 150)
+        elif size == 'medium':
+            return random.randint(151, 500)
+        else:
+            return random.randint(501, 1500)
+
+    df['member_count'] = df['size_bucket'].apply(get_member_count)
+    df['founded_year'] = [random.randint(1900, 2020) for _ in range(len(df))]
+
+    return df
+
 
 def main():
-    load_dotenv()    # ensure .env credentials are loaded
-    init_logging()
+    """Main ingestion function."""
+    # Read the CSV
+    csv_path = Path("data/gothenburg_associations.csv")
 
-    parser = argparse.ArgumentParser(
-        description="Ingest enriched associations CSV into MySQL `associations` table"
-    )
-    parser.add_argument(
-        "--csv-path",
-        type=Path,
-        default=Path("data") / "associations_goteborg_with_coords.csv",
-        help="Path to the enriched associations CSV file",
-    )
-    args = parser.parse_args()
-    ingest(args.csv_path)
+    try:
+        # Try different encodings
+        for encoding in ['utf-8', 'latin-1', 'iso-8859-1']:
+            try:
+                df = pd.read_csv(csv_path, encoding=encoding)
+                logger.info(f"Successfully read CSV with {encoding} encoding")
+                break
+            except UnicodeDecodeError:
+                continue
+    except Exception as e:
+        logger.error(f"Could not read CSV: {e}")
+        return
+
+    # Filter out empty rows
+    df = df[df['Namn'].notna()].copy()
+    logger.info(f"Found {len(df)} associations")
+
+    # Clean data
+    df = clean_associations_data(df)
+
+    # Geocode addresses (limited for testing)
+    logger.info("Starting geocoding...")
+    geocoded_df = geocode_addresses(df, limit=30)  # Limit to 30 for testing
+
+    if geocoded_df.empty:
+        logger.error("No addresses geocoded")
+        return
+
+    # Add size buckets and other fields
+    geocoded_df = assign_size_buckets(geocoded_df)
+
+    # Prepare for database
+    geocoded_df['id'] = range(1, len(geocoded_df) + 1)
+
+    # Insert into database
+    engine = get_engine()
+
+    # Create tables if needed
+    Base.metadata.create_all(bind=engine)
+
+    # Clear existing data
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM associations"))
+
+        # Insert new data
+        geocoded_df.to_sql(
+            'associations',
+            conn,
+            if_exists='append',
+            index=False,
+            method='multi'
+        )
+
+    logger.info(f"Successfully loaded {len(geocoded_df)} associations")
+
+    # Add some sample data for major clubs if not geocoded
+    add_sample_major_clubs(engine)
+
+
+def add_sample_major_clubs(engine):
+    """Add well-known Gothenburg clubs with accurate coordinates."""
+    major_clubs = [
+        {
+            'name': 'IFK Göteborg',
+            'address': 'Kamratgårdsvägen 50, 416 55 Göteborg, Sverige',
+            'lat': 57.706547,
+            'lon': 11.980125,
+            'size_bucket': 'large',
+            'member_count': 1500,
+            'founded_year': 1904
+        },
+        {
+            'name': 'GAIS',
+            'address': 'Gamla Boråsvägen 75, 412 76 Göteborg, Sverige',
+            'lat': 57.687932,
+            'lon': 11.989746,
+            'size_bucket': 'large',
+            'member_count': 1200,
+            'founded_year': 1894
+        },
+        {
+            'name': 'BK Häcken',
+            'address': 'Entreprenadvägen 6, 417 05 Göteborg, Sverige',
+            'lat': 57.705891,
+            'lon': 11.936847,
+            'size_bucket': 'large',
+            'member_count': 1000,
+            'founded_year': 1940
+        }
+    ]
+
+    # Check if these already exist
+    with engine.begin() as conn:
+        for club in major_clubs:
+            exists = conn.execute(
+                text("SELECT 1 FROM associations WHERE name = :name"),
+                {"name": club['name']}
+            ).first()
+
+            if not exists:
+                conn.execute(
+                    text("""
+                        INSERT INTO associations 
+                        (name, address, lat, lon, size_bucket, member_count, founded_year)
+                        VALUES (:name, :address, :lat, :lon, :size_bucket, :member_count, :founded_year)
+                    """),
+                    club
+                )
+                logger.info(f"Added major club: {club['name']}")
+
 
 if __name__ == "__main__":
     main()
@@ -1051,6 +1666,153 @@ if __name__ == "__main__":
 
 
 ================================================================================
+FIL: utils/generate_sample_data.py
+================================================================================
+
+#!/usr/bin/env python3
+"""Generate realistic sample data for SponsorMatch AI."""
+
+import pandas as pd
+import random
+from faker import Faker
+import numpy as np
+from pathlib import Path
+
+# Set seeds for reproducibility
+random.seed(42)
+np.random.seed(42)
+fake = Faker()
+Faker.seed(42)
+
+
+def generate_sample_companies(n=50):
+    """Generate realistic Swedish companies."""
+    companies = []
+
+    # Swedish company types and their characteristics
+    industries = {
+        'Technology': {'revenue_range': (10000, 500000), 'employee_range': (10, 200)},
+        'Manufacturing': {'revenue_range': (50000, 1000000), 'employee_range': (50, 500)},
+        'Finance': {'revenue_range': (25000, 750000), 'employee_range': (20, 300)},
+        'Healthcare': {'revenue_range': (15000, 400000), 'employee_range': (15, 150)},
+        'Retail': {'revenue_range': (20000, 300000), 'employee_range': (25, 100)},
+    }
+
+    # Swedish cities with coordinates
+    cities = [
+        ('Göteborg', 57.7089, 11.9746),
+        ('Stockholm', 59.3293, 18.0686),
+        ('Malmö', 55.6050, 13.0038),
+        ('Uppsala', 59.8586, 17.6389),
+        ('Linköping', 58.4108, 15.6214)
+    ]
+
+    for i in range(n):
+        industry = random.choice(list(industries.keys()))
+        city, base_lat, base_lon = random.choice(cities)
+
+        # Add some randomness to coordinates
+        lat = base_lat + random.uniform(-0.1, 0.1)
+        lon = base_lon + random.uniform(-0.1, 0.1)
+
+        revenue = random.randint(*industries[industry]['revenue_range'])
+        employees = random.randint(*industries[industry]['employee_range'])
+
+        # Determine size bucket
+        if revenue < 50000:
+            size_bucket = 'small'
+        elif revenue < 250000:
+            size_bucket = 'medium'
+        else:
+            size_bucket = 'large'
+
+        company = {
+            'id': i + 1,
+            'orgnr': f"{random.randint(100000, 999999)}-{random.randint(1000, 9999)}",
+            'name': f"{fake.company()} {random.choice(['AB', 'Ltd', 'Group'])}",
+            'revenue_ksek': revenue,
+            'employees': employees,
+            'year': random.randint(2020, 2024),
+            'size_bucket': size_bucket,
+            'industry': industry,
+            'lat': round(lat, 6),
+            'lon': round(lon, 6)
+        }
+        companies.append(company)
+
+    return pd.DataFrame(companies)
+
+
+def generate_sample_associations(n=30):
+    """Generate realistic Swedish sports associations."""
+    associations = []
+
+    sports = ['Fotboll', 'Ishockey', 'Bandy', 'Handboll', 'Basket', 'Innebandy']
+    cities = [
+        ('Göteborg', 57.7089, 11.9746),
+        ('Mölndal', 57.6554, 12.0134),
+        ('Partille', 57.7394, 12.1065),
+        ('Lerum', 57.7706, 12.2694),
+        ('Kungälv', 57.8700, 11.9800)
+    ]
+
+    for i in range(n):
+        sport = random.choice(sports)
+        city, base_lat, base_lon = random.choice(cities)
+
+        lat = base_lat + random.uniform(-0.05, 0.05)
+        lon = base_lon + random.uniform(-0.05, 0.05)
+
+        members = random.randint(50, 800)
+
+        # Size bucket based on members
+        if members < 150:
+            size_bucket = 'small'
+        elif members < 400:
+            size_bucket = 'medium'
+        else:
+            size_bucket = 'large'
+
+        association = {
+            'id': i + 1,
+            'name': f"{city} {sport}klub",
+            'member_count': members,
+            'address': f"{fake.street_address()}, {city}",
+            'lat': round(lat, 6),
+            'lon': round(lon, 6),
+            'size_bucket': size_bucket,
+            'founded_year': random.randint(1950, 2020)
+        }
+        associations.append(association)
+
+    return pd.DataFrame(associations)
+
+
+def main():
+    """Generate and save sample data."""
+    project_root = Path(__file__).parent.parent
+    data_dir = project_root / "data"
+    data_dir.mkdir(exist_ok=True)
+
+    # Generate data
+    print("Generating sample companies...")
+    companies = generate_sample_companies(50)
+    companies.to_csv(data_dir / "sample_companies.csv", index=False)
+    print(f"Generated {len(companies)} companies")
+
+    print("Generating sample associations...")
+    associations = generate_sample_associations(30)
+    associations.to_csv(data_dir / "sample_associations.csv", index=False)
+    print(f"Generated {len(associations)} associations")
+
+    print(f"Data saved to {data_dir}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
 FIL: utils/list_project_files.py
 ================================================================================
 
@@ -1091,7 +1853,11 @@ EXCLUDE_FILES = {
     'data/bolag_1_500_sorted_with_year.csv',
     'data/associations_goteborg.csv',
     'data/associations_goteborg_with_coords.csv',
-    'data/gothenburg_companies_addresses.csv'
+    'data/gothenburg_companies_addresses.csv',
+    'data/associations_geocoded.csv',
+    'data/companies_geocoded.csv',
+    'data/gothenburg_associations.csv',
+    'data/municipality_of_goteborg.csv'
 }
 EXCLUDE_FILENAMES = {'bolag_1_500_with_coords.csv'}
 
@@ -1214,6 +1980,381 @@ if __name__ == "__main__":
 
 
 ================================================================================
+FIL: utils/setup_database.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+setup_database.py - Complete database setup for SponsorMatch AI
+Ensures both associations and companies are properly loaded.
+"""
+
+import logging
+from pathlib import Path
+
+import pandas as pd
+from sqlalchemy import text
+
+from sponsor_match.core.db import get_engine
+from sponsor_match.models.entities import Base
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def setup_database():
+    """Set up the complete database with sample data."""
+    engine = get_engine()
+
+    # Create all tables
+    Base.metadata.create_all(bind=engine)
+    logger.info("Created database tables")
+
+    # Load associations
+    load_sample_associations(engine)
+
+    # Load companies
+    load_sample_companies(engine)
+
+    # Verify data
+    verify_data(engine)
+
+
+def load_sample_associations(engine):
+    """Load sample associations with realistic Gothenburg data."""
+    associations = [
+        # Large clubs
+        {'name': 'IFK Göteborg', 'address': 'Kamratgårdsvägen 50, 416 55 Göteborg',
+         'lat': 57.706547, 'lon': 11.980125, 'size_bucket': 'large', 'member_count': 1500, 'founded_year': 1904},
+        {'name': 'GAIS', 'address': 'Gamla Boråsvägen 75, 412 76 Göteborg',
+         'lat': 57.687932, 'lon': 11.989746, 'size_bucket': 'large', 'member_count': 1200, 'founded_year': 1894},
+        {'name': 'BK Häcken', 'address': 'Entreprenadvägen 6, 417 05 Göteborg',
+         'lat': 57.705891, 'lon': 11.936847, 'size_bucket': 'large', 'member_count': 1000, 'founded_year': 1940},
+        {'name': 'Örgryte IS', 'address': 'Skånegatan 5, 412 51 Göteborg',
+         'lat': 57.693734, 'lon': 11.996542, 'size_bucket': 'large', 'member_count': 900, 'founded_year': 1887},
+
+        # Medium clubs
+        {'name': 'Qviding FIF', 'address': 'Härlanda Park 6B, 416 52 Göteborg',
+         'lat': 57.703456, 'lon': 12.015234, 'size_bucket': 'medium', 'member_count': 400, 'founded_year': 1987},
+        {'name': 'Västra Frölunda IF', 'address': 'Klubbvägen 19, 421 47 Västra Frölunda',
+         'lat': 57.652341, 'lon': 11.928765, 'size_bucket': 'medium', 'member_count': 350, 'founded_year': 1947},
+        {'name': 'Kärra KIF', 'address': 'Burmans gata 3, 425 33 Hisings Kärra',
+         'lat': 57.765432, 'lon': 11.945678, 'size_bucket': 'medium', 'member_count': 300, 'founded_year': 1970},
+        {'name': 'Sävedalens IF', 'address': 'Hultvägen 2, 433 64 Sävedalen',
+         'lat': 57.709876, 'lon': 12.057891, 'size_bucket': 'medium', 'member_count': 450, 'founded_year': 1948},
+
+        # Small clubs
+        {'name': 'Majorna BK', 'address': 'Karl Johansgatan 152, 414 51 Göteborg',
+         'lat': 57.689012, 'lon': 11.914567, 'size_bucket': 'small', 'member_count': 120, 'founded_year': 1990},
+        {'name': 'Lundby IF', 'address': 'Munkedalsgatan 10, 417 16 Göteborg',
+         'lat': 57.719234, 'lon': 11.942345, 'size_bucket': 'small', 'member_count': 100, 'founded_year': 2005},
+        {'name': 'Gamlestaden FF', 'address': 'Artillerigatan 33, 415 02 Göteborg',
+         'lat': 57.725678, 'lon': 12.005432, 'size_bucket': 'small', 'member_count': 80, 'founded_year': 2010},
+        {'name': 'Kortedala IK', 'address': 'Julaftonsgatan 58, 415 44 Göteborg',
+         'lat': 57.737890, 'lon': 12.026789, 'size_bucket': 'small', 'member_count': 90, 'founded_year': 1969},
+    ]
+
+    df = pd.DataFrame(associations)
+
+    with engine.begin() as conn:
+        # Clear existing data
+        conn.execute(text("DELETE FROM associations"))
+
+        # Insert new data
+        df.to_sql('associations', conn, if_exists='append', index=False)
+
+    logger.info(f"Loaded {len(df)} associations")
+
+
+def load_sample_companies(engine):
+    """Load sample companies in Gothenburg area."""
+    companies = []
+
+    # Technology companies (10-char orgnr format)
+    companies.extend([
+        {'name': 'Volvo Tech AB', 'orgnr': '5560123456', 'revenue_ksek': 150000, 'employees': 200,
+         'year': 2023, 'size_bucket': 'large', 'industry': 'Technology', 'lat': 57.708765, 'lon': 11.965432},
+        {'name': 'Ericsson Göteborg', 'orgnr': '5560234567', 'revenue_ksek': 200000, 'employees': 300,
+         'year': 2023, 'size_bucket': 'large', 'industry': 'Technology', 'lat': 57.695432, 'lon': 11.987654},
+        {'name': 'IT Solutions AB', 'orgnr': '5560345678', 'revenue_ksek': 25000, 'employees': 50,
+         'year': 2023, 'size_bucket': 'medium', 'industry': 'Technology', 'lat': 57.712345, 'lon': 11.998765},
+    ])
+
+    # Finance companies
+    companies.extend([
+        {'name': 'Nordea Göteborg', 'orgnr': '5560456789', 'revenue_ksek': 300000, 'employees': 150,
+         'year': 2023, 'size_bucket': 'large', 'industry': 'Finance', 'lat': 57.701234, 'lon': 11.975432},
+        {'name': 'SEB Private Banking', 'orgnr': '5560567890', 'revenue_ksek': 180000, 'employees': 80,
+         'year': 2023, 'size_bucket': 'large', 'industry': 'Finance', 'lat': 57.698765, 'lon': 11.968901},
+        {'name': 'Finanskonsult AB', 'orgnr': '5560678901', 'revenue_ksek': 15000, 'employees': 20,
+         'year': 2023, 'size_bucket': 'small', 'industry': 'Finance', 'lat': 57.715678, 'lon': 11.945678},
+    ])
+
+    # Manufacturing companies
+    companies.extend([
+        {'name': 'SKF Sverige AB', 'orgnr': '5560789012', 'revenue_ksek': 500000, 'employees': 1000,
+         'year': 2023, 'size_bucket': 'large', 'industry': 'Manufacturing', 'lat': 57.721234, 'lon': 11.890123},
+        {'name': 'Göteborg Mekaniska', 'orgnr': '5560890123', 'revenue_ksek': 45000, 'employees': 100,
+         'year': 2023, 'size_bucket': 'medium', 'industry': 'Manufacturing', 'lat': 57.735678, 'lon': 11.912345},
+        {'name': 'Precision Tools AB', 'orgnr': '5560901234', 'revenue_ksek': 30000, 'employees': 60,
+         'year': 2023, 'size_bucket': 'medium', 'industry': 'Manufacturing', 'lat': 57.745678, 'lon': 11.923456},
+    ])
+
+    # Retail companies
+    companies.extend([
+        {'name': 'ICA Maxi Göteborg', 'orgnr': '5561012345', 'revenue_ksek': 120000, 'employees': 150,
+         'year': 2023, 'size_bucket': 'large', 'industry': 'Retail', 'lat': 57.689012, 'lon': 11.934567},
+        {'name': 'Systembolaget City', 'orgnr': '5561123456', 'revenue_ksek': 80000, 'employees': 50,
+         'year': 2023, 'size_bucket': 'medium', 'industry': 'Retail', 'lat': 57.705678, 'lon': 11.967890},
+        {'name': 'Sportbutiken AB', 'orgnr': '5561234567', 'revenue_ksek': 18000, 'employees': 25,
+         'year': 2023, 'size_bucket': 'small', 'industry': 'Retail', 'lat': 57.698765, 'lon': 11.956789},
+    ])
+
+    # Healthcare companies
+    companies.extend([
+        {'name': 'Sahlgrenska Life', 'orgnr': '5561345678', 'revenue_ksek': 250000, 'employees': 400,
+         'year': 2023, 'size_bucket': 'large', 'industry': 'Healthcare', 'lat': 57.683456, 'lon': 11.962345},
+        {'name': 'Vårdcentral Väst', 'orgnr': '5561456789', 'revenue_ksek': 35000, 'employees': 45,
+         'year': 2023, 'size_bucket': 'medium', 'industry': 'Healthcare', 'lat': 57.654321, 'lon': 11.923456},
+        {'name': 'Hälsokliniken', 'orgnr': '5561567890', 'revenue_ksek': 12000, 'employees': 15,
+         'year': 2023, 'size_bucket': 'small', 'industry': 'Healthcare', 'lat': 57.712345, 'lon': 11.989012},
+    ])
+
+    # Add more companies spread around Gothenburg
+    import random
+    for i in range(20):
+        lat = 57.65 + random.uniform(0, 0.1)
+        lon = 11.9 + random.uniform(0, 0.15)
+        revenue = random.randint(5000, 100000)
+
+        size = 'small' if revenue < 20000 else 'medium' if revenue < 100000 else 'large'
+
+        companies.append({
+            'name': f'Local Business {i + 1} AB',
+            'orgnr': f'556{200 + i:03d}{1000 + i:04d}',  # Format: 10 digits, no hyphen
+            'revenue_ksek': revenue,
+            'employees': random.randint(5, 200),
+            'year': 2023,
+            'size_bucket': size,
+            'industry': random.choice(['Technology', 'Finance', 'Manufacturing', 'Retail', 'Healthcare']),
+            'lat': lat,
+            'lon': lon
+        })
+
+    df = pd.DataFrame(companies)
+
+    with engine.begin() as conn:
+        # Clear existing data
+        conn.execute(text("DELETE FROM companies"))
+
+        # Insert new data
+        df.to_sql('companies', conn, if_exists='append', index=False)
+
+    logger.info(f"Loaded {len(df)} companies")
+
+
+def verify_data(engine):
+    """Verify the loaded data."""
+    with engine.connect() as conn:
+        # Count associations
+        assoc_count = conn.execute(text("SELECT COUNT(*) FROM associations")).scalar()
+        logger.info(f"Total associations: {assoc_count}")
+
+        # Count by size bucket
+        size_counts = conn.execute(text("""
+            SELECT size_bucket, COUNT(*) as count 
+            FROM associations 
+            GROUP BY size_bucket
+        """)).fetchall()
+
+        for size, count in size_counts:
+            logger.info(f"  {size}: {count} associations")
+
+        # Count companies
+        comp_count = conn.execute(text("SELECT COUNT(*) FROM companies")).scalar()
+        logger.info(f"Total companies: {comp_count}")
+
+        # Count by industry
+        industry_counts = conn.execute(text("""
+            SELECT industry, COUNT(*) as count 
+            FROM companies 
+            GROUP BY industry
+        """)).fetchall()
+
+        for industry, count in industry_counts:
+            logger.info(f"  {industry}: {count} companies")
+
+
+if __name__ == "__main__":
+    setup_database()
+
+
+================================================================================
+FIL: utils/train_clustering_models.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+train_clustering_models.py - Train clustering models with consistent features
+"""
+
+import logging
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import joblib
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from sqlalchemy import text
+
+from sponsor_match.core.db import get_engine
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Ensure models directory exists
+MODELS_DIR = Path(__file__).parent.parent / "models"
+MODELS_DIR.mkdir(exist_ok=True)
+
+# Feature configuration
+FEATURES = ['lat', 'lon']  # Use only lat/lon for consistent features
+N_CLUSTERS = {
+    'default': 5,
+    'large': 3
+}
+
+
+def load_data():
+    """Load associations and companies from database."""
+    engine = get_engine()
+
+    with engine.connect() as conn:
+        # Load associations
+        associations = pd.read_sql("""
+            SELECT id, name, lat, lon, size_bucket, member_count
+            FROM associations
+            WHERE lat IS NOT NULL AND lon IS NOT NULL
+        """, conn)
+
+        # Load companies
+        companies = pd.read_sql("""
+            SELECT id, name, lat, lon, size_bucket, revenue_ksek
+            FROM companies
+            WHERE lat IS NOT NULL AND lon IS NOT NULL
+        """, conn)
+
+    return associations, companies
+
+
+def train_clustering_model(data, n_clusters, model_name):
+    """Train a clustering model on the given data."""
+    # Extract features
+    X = data[FEATURES].values
+
+    # Scale features
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # Train KMeans
+    kmeans = KMeans(n_clusters=min(n_clusters, len(data)), random_state=42)
+    kmeans.fit(X_scaled)
+
+    # Create model package with scaler
+    model_package = {
+        'scaler': scaler,
+        'kmeans': kmeans,
+        'features': FEATURES,
+        'n_features': len(FEATURES)
+    }
+
+    # Save model
+    model_path = MODELS_DIR / f"{model_name}.joblib"
+    joblib.dump(model_package, model_path)
+    logger.info(f"Saved {model_name} model to {model_path}")
+
+    # Report cluster sizes
+    labels = kmeans.labels_
+    unique, counts = np.unique(labels, return_counts=True)
+    for label, count in zip(unique, counts):
+        logger.info(f"  Cluster {label}: {count} items")
+
+    return model_package
+
+
+def train_all_models():
+    """Train all clustering models."""
+    # Load data
+    associations, companies = load_data()
+
+    if associations.empty or companies.empty:
+        logger.error("No data found. Run setup_database.py first.")
+        return
+
+    logger.info(f"Loaded {len(associations)} associations and {len(companies)} companies")
+
+    # Combine all data for default model
+    all_data = pd.concat([
+        associations[FEATURES + ['size_bucket']],
+        companies[FEATURES + ['size_bucket']]
+    ], ignore_index=True)
+
+    # Train default model (for small/medium entities)
+    default_data = all_data[all_data['size_bucket'].isin(['small', 'medium'])]
+    if len(default_data) > 0:
+        logger.info(f"\nTraining default model with {len(default_data)} entities")
+        train_clustering_model(default_data, N_CLUSTERS['default'], 'kmeans')
+
+    # Train large model (for large entities)
+    large_data = all_data[all_data['size_bucket'] == 'large']
+    if len(large_data) > 0:
+        logger.info(f"\nTraining large model with {len(large_data)} entities")
+        train_clustering_model(large_data, N_CLUSTERS['large'], 'kmeans_large')
+
+    # Create simplified models for backward compatibility
+    create_backward_compatible_models()
+
+
+def create_backward_compatible_models():
+    """Create simplified models for backward compatibility."""
+    # Load the model packages
+    default_package = joblib.load(MODELS_DIR / "kmeans.joblib")
+    large_package = joblib.load(MODELS_DIR / "kmeans_large.joblib")
+
+    # Extract just the KMeans models
+    joblib.dump(default_package['kmeans'], MODELS_DIR / "kmeans_simple.joblib")
+    joblib.dump(large_package['kmeans'], MODELS_DIR / "kmeans_large_simple.joblib")
+
+    logger.info("Created backward compatible models")
+
+
+def test_models():
+    """Test the trained models."""
+    # Load a model
+    model_package = joblib.load(MODELS_DIR / "kmeans.joblib")
+    scaler = model_package['scaler']
+    kmeans = model_package['kmeans']
+
+    # Test points in Gothenburg area
+    test_points = [
+        [57.7089, 11.9746],  # Central Gothenburg
+        [57.6523, 11.9118],  # Västra Frölunda
+        [57.7654, 11.9457],  # Hisings Kärra
+    ]
+
+    logger.info("\nTesting model predictions:")
+    for point in test_points:
+        scaled_point = scaler.transform([point])
+        cluster = kmeans.predict(scaled_point)[0]
+        logger.info(f"  Point {point} -> Cluster {cluster}")
+
+
+if __name__ == "__main__":
+    train_all_models()
+    test_models()
+
+
+================================================================================
 FIL: .pytest_cache/README.md
 ================================================================================
 
@@ -1228,209 +2369,42 @@ See [the docs](https://docs.pytest.org/en/stable/how-to/cache.html) for more inf
 
 
 ================================================================================
-FIL: data/gothenburg_associations.csv
+FIL: data/examine.py
 ================================================================================
 
-,,Namn,För. Nr,Adress,Co Adress,Post Nr,,Postort,Kommun,Epostadress,,Hemsida
-,,Afganska Göteborg FF,55754,Blåsvädersgatan,Mahdi Khodadad,41832,,Göteborg,Göteborg,mahdi322.mk47@gmail.com,,
-,,Ahlafors IF,1019,Box 3002,,44914,,ALAFORS,Ale,kansliet@ahlaforsif.se,,www.ahlaforsif.se
-,,AIF Göteborg,1088,Kungsladugårdsgatan 100,Lars Wingfors,41476,,GÖTEBORG,Göteborg,AIF.Goteborg@gmail.com,,
-,,Alealiber IF,54781,Ahrenbergsgatan 27,Cecilia Jansson,416 73,,Göteborg,Göteborg,alealiberif@outlook.com,,https://www.svenskalag.se/alealiberif
-,,Angered BK,53795,Knattens väg 12,,424 32,,Angered,Göteborg,abbas@gunnilseis.se; idris.abdi@gunnilseis.se; kansli@gunnilseis.se; husyusu@live.se,,https://www.angeredallians.se
-,,Angered MBIK,8390,Svarte Filips gata 10,,42444,,ANGERED,Göteborg,angeredmbik@gmail.com; husyusu@live.se,,www.svenskalag.se/angeredmbik
-,,Angered SK,52246,BOX 36,,424 21,,Angered,Göteborg,angeredsk@gmail.com,,svenskalag.se/angeredsk
-,,Angereds IS,31137,Högaffelgatan 15,,424,,Angered,Göteborg,viktor.kirsby@angeredsis.com,,angeredsis.com
-,,Annedal FF,54158,Nilssonsberg 31,,41143,,Göteborg,Göteborg,annedalff@hotmail.com,,
-,,Apollon FF Göteborg ,56645,Våmmedalsvägen 8,,42831,,Kållered,Göteborg,amaertotelioses@gmail.com,,
-,,Askims IK,1113,Box 9120,Stora Åvägen 1,40093,,GÖTEBORG,Göteborg,info@askimsik.se,,www.askimsik.se
-,,Assyriska BK,8350,Diamantgatan 1,,42150,,VÄSTRA FRÖLUNDA,Göteborg,assyriska.bk@mail.com,,https://www.laget.se/AssyriskaBK
-,,Athletic FC Angered ,56528,Kalendervägen 16,Hussein Yusuf Abdi,41534,,GÖTEBORG,Göteborg,afcangered@gmail.com,,w
-,,Atletico Göteborg FC ,55193,"Danska vägen 88, Göteborg",,416 59,,Göteborg,Göteborg,ts.samuelsson@hotmail.com,,
-,,Azalea BK,27680,Ekedalsgatan 20,Majvallen,41468,,GÖTEBORG,Göteborg,kansli@azaleabk.se,,http://www.azaleabk.se
-,,Backatorp IF,32492,, ,42247,,Hisings Backa,Göteborg,kansliet@backatorpif.se,,www.backatorpif.se
-,,Balltorps FF,24821,Gundefjällsgatan 115,Jonas Werley,43150,,Mölndal,Mölndal,joel@i-store.se,,www.laget.se/balltorpsff
-,,Bellevue City FK ,56477,Karl Gustavsgatan 53,,41131,,Göteborg,Göteborg,tom_engvall@hotmail.com,,
-,,Bergsjö IF,1168,"Sjustjärnan, Bergsjövallen",,415 51,,GÖTEBORG,Göteborg,bergsjoifgbg@outlook.com,,www.laget.se/bergsjo_if
-,,Bergums IF,1172,Bergumsvallen,,42470,,OLOFSTORP,Göteborg,bergumsif@gmail.com,,Laget.se/bergumsif
-,,Bjurslätts IF,1192,Hällskriftsgatan 3,,41726,,GÖTEBORG,Göteborg,info@bjurslatt.se,,http://www.bjurslatt.com
-,,Björndammens BK,8304,Grenvägen 3,Christer Grahn,43347,,PARTILLE,Partille,kansli@bjorndammensbk.se,,www.bjorndammensbk.se
-,,BK Bifrost,8301,BK Bifrost ,Karin Larsson,431 44,,MÖLNDAL,Mölndal,fana_hunegnaw@hotmail.com; kassor@bkbifrost.se,,www.bkbifrost.se
-,,BK Björkåsen,1584,Nolängsvägen 12,Curt Bryngelsson,424 55,,Angered,Göteborg,cbryngel@gmail.com,,http://www.laget.se/bjorkasen
-,,BK Häcken,2126,Entreprenadvägen 6,,417 05,,GÖTEBORG,Göteborg,kansli@bkhacken.se; kansliungdom@bkhacken.se; anders.wahrnberg@bkhacken.se,,https://bkhacken.se/
-,,BK Häcken FF,8378,Entreprenadvägen 6,,417 05,,Göteborg,Göteborg,kansli@bkhacken.se; kansliungdom@bkhacken.se; anders.wahrnberg@bkhacken.se; tomas.andersson@bkhacken.se,,https://bkhacken.se/
-,,BK S:t Jakob,34967,Parkgatan 4,,41138,,GÖTEBORG,Göteborg,Robertolans@hotmail.com,,svenskalag.se/bkjakob
-,,BK Skottfint,35610,Verkmästaregatan 2,Daniel Åman,41757,,GÖTEBORG,Göteborg,fogis@skottfint.nu,,http://www.skottfint.nu
-,,Brämaregårdens FC,45892,Blidvädersplan,,418 30,,Göteborg,Göteborg,bramaregarden@hotmail.com,,svenskalag.se/bfc
-,,Chalmers Studentkårs IS,51319,Teknologgården 2,,412 58,,Göteborg,Göteborg,carl.kieksi@cis-chalmers.se,,
-,,Club América FF,54448,Sommarvädersgatan 18-1201,Mike Ramirez,41833,,Göteborg,Göteborg,club.america.ff@outlook.com,,https://www.svenskalag.se/clubamericaff
-,,Croatia Göteborg,8314,Kortedala Idrottsväg 15,,41511,,GÖTEBORG,Göteborg,ante.lijic@seb.se; ervin.gulin@hotmail.com,,https://www.laget.se/CROATIAGOTEBORG/
-,,Dalen/Krokslätts FF,8315,Krokslätts Storgata 44,,431 38,,MÖLNDAL,Mölndal,dalenkff@gmail.com,,www.laget.se/DalenKFF_
-,,Diseröd SK,44736,ULVEGÄRDEGATAN 49,DANIEL BROMAN,44243,,KUNGÄLV,Kungälv,dskfotboll@live.se,,http://www.svenskalag.se/diserodsk
-,,Donsö IS,8316,Lurkenvägen 2,,43082,,DONSÖ,Göteborg,Anders.backman@siriusshipping.eu ; jbe.taxi@telia.com,,http://www.laget.se/Donsois1
-,,Elisedals IS,1480,Löparegatan 2,,416 69,,GÖTEBORG,Göteborg,elisedals_is@hotmail.com,,http://www.laget.se/elisedalsis
-,,Eriksbergs IF,8319,Danagatan 16,Reine Lindmark,41876,,GÖTEBORG,Göteborg,eriksberg.fotboll@telia.com,,
-,,Espanyol Göteborg IF ,54985,Trädesgatan 5A ,,41505,,Göteborg,Göteborg,ernesto@rcdespanyolacademy.se; goteborg@rcdespanyolacademy.se,,
-,,FC Fyrklövern,67139,Fyrklöversgatan,,41721,,Göteborg,Göteborg,fcfyrklovern2020@gmail.com,,
-,,FC Heden,44670,Johannas väg 26,Tobias Larsson,42542,,Göteborg,Göteborg,fcheden@hotmail.com,,www.laget.se/fcheden
-,,FC Härlanda,45280,Lilla Korsåsgatan 28,Sebatian Malcus,421 47,,Västra Frölunda,Göteborg,jonatan_hellman@hotmail.com,,
-,,FC Komarken,40883,Kongahällagatan 34 A,,442 38,,KUNGÄLV,Kungälv,fckomarken@gmail.com,,http://www.laget.se/fc-komarken
-,,FC Kålltorp ,54962,Björcksgatan 11,"Ulf Jörnvik, FC Kålltorp",41652,,Göteborg,Göteborg,mikael.ok.olsson@gmail.com,,
-,,FC Ljiljan Göteborg,52848,Ekspinnarevägen 19,Haris Avdic,43531,,Mölnlycke,Härryda,avdicharis@yahoo.se,,https://www.svenskalag.se/fcljiljan
-,,FC Majorna,43869,Bangatan 23,Okinedo,41463,,Göteborg,Göteborg,jaykadir86@gmail.com,,laget.se/FCmajorna
-,,Finlandia Pallo AIF,26254,Hinnebäcksgatan,,417 45,,GÖTEBORG,Göteborg,info@finpa.se,,www.finpa.se
-,,Floda BoIF,1620,Skallsjö Prästväg 12,,448 31,,FLODA,Lerum,kansliet@flodaboif.se,,http://www.flodaboif.se
-,,Fotö GoIF,8323,Dörjevägen 18,Maria Zackrisson,47545,,Fotö,Öckerö,Rasmuszackrisson@gmail.com,,www.laget.se/fgif
-,,Framtida Idrottsförening ,55962,"Markurellgatan 24, lgh 1102",Osman Cabdisamad Cismaan,422 52,,Hisings Backa,Göteborg,osman.cismaan93@gmail.com,,
-,,Fröjdens FK,51007,Mölndalsvägen 87D,Philip Franzén,41284,,Göteborg,Göteborg,frojdensfk@hotmail.com,,http://www.laget.se/frojdensfk
-,,Fässbergs IF,8328,Idrottsvägen 3,,43162,,MÖLNDAL,Mölndal,kansli@fassbergsif.se; fogis@fassbergsif.se; klubbchef@fassbergsif.se; ordforande@fassbergsif.se,,www.fassbergsif.se
-,,GAIS,8338,Gamla Boråsvägen 75,,41276,,GÖTEBORG,Göteborg,info@gais.se; magnus.skoldmark@gais.se,,www.gais.se
-,,GAIS Futsal,51600,Årsringagatan 50,Fredrik Ritter,431 51,,Mölndal,Göteborg,fredrik@gotrev.se,,www.gaisfutsal.com
-,,Galacticos FC,66921,Galileis Gata 13,Sadaq Bashir,41554,,Göteborg,Göteborg,galacticos.bergsjon@gmail.com,,
-,,Gambian Mix IF,54183,Inägogatan 23C,Mustapha Minteh,41784,,Göteborg ,Göteborg,baltimore83@hotmail.com,,
-,,Gamlestaden FF,51497,Eklövsvägen 216,Christian Brile,443 50,,Lerum,Göteborg,christian.brile@gmail.com,,www.gamlestadenff.se
-,,Gatans Lag FF,45770,Härlanda Park 6B,Qviding FIF,41652,,Göteborg,Göteborg,info@gatanslag.se; felizia@gatanslag.se,,www.gatanslag.se
-,,GoldCoast FC,54766,Tellusgatan 8 lgh 452,Gilbert Mensah,41568,,GÖTEBORG ,Göteborg,gold.coast.fc.gbg@gmail.com,,https://www.svenskalag.se/goldcoastfc
-,,Gothenburg Celtic FC,43913,Haga Östergata 18,Florent Schildknecht,41301,,Göteborg,Göteborg,gothenburgceltic@gmail.com,,www.gothenburgceltic.com
-,,Grunden BOIS,38306,Krutvägen 4,Prioritet Serneke Arena,415 28,,GÖTEBORG,Göteborg,thor@grundenbois.com,,http://www.grundenbois.com
-,,Guldhedens IK,1835,Dr. Heymans gata 1F,,41322,,GÖTEBORG,Göteborg,kansli@guldhedensik.se; fotbollsansvarig@guldhedensik.se; ungdomsfotboll@guldhedensik.se,,https://www.guldhedensik.se
-,,Gunnared KIF,50945,Gunnaredsvallen 4,,42466,,Angered,Göteborg,gunnaredkif@outlook.com ,,www.svenskalag.se/gunnaredkif
-,,Gunnilse IS,1850,Knattens Väg 12,,424 32,,ANGERED,Göteborg,kansli@gunnilseis.se; Bjorn@gunnilseis.se; gunilla@gunnilseis.se; idris.abdi@gunnilseis.se; abbas@gunnilseis.se,,http://www.gunnilseis.se
-,,Gårda BK,8333,Katrinebergsgatan 4B,Näsström,43161,,Mölndal,Göteborg,gardabk1919@gmail.com,,www.svenskalag.se/gardabk
-,,Gårdsten FC,56525,Muskotgatan 32,,42441,,Angered,Göteborg,Gardstenfc@gmail.com,,
-,,Götafors BK ,56552,Bifrostgatan 48E,,43144,,Mölndal,Mölndal,gotaforsbk@outlook.com,,
-,,Götaholms BK,8335,Ambrosiusgatan 2,Brandströmska skolan,41517,,GÖTEBORG,Göteborg,info.gotaholm@gmail.com,,http://www.gotaholm.se
-,,Göteborgs City FF,40858,Norra Krokslättsgatan 13,Hultberg,41264,,Göteborg,Göteborg,goteborgscityff@gmail.com,,https://www.instagram.com/goteborgscityff/
-,,Göteborgs FF,1895,Ekedalsgatan 20,Majvallen,414 68,,GÖTEBORG,Göteborg,gff@gff1897.se,,http://www.svenskalag.se/gff1897
-,,Göteborgs SIF,1907,Gibraltargatan 39-41,Idrottshallen Fysiken,41279,,GÖTEBORG,Göteborg,styrelsen@gsif.se,,http://gsif.se/
-,,Hammarkullens BK,50653,Fjäderharvsgatan 115,Christian Winnicki,42466,,Angered,Göteborg,Yaaquub.hkbk@gmail.com,,
-,,Hermansby IF,2014,Lyckevägen 19,,442 70,,KÄRNA,Kungälv,kansli@hermansbyif.se,,www.hermansbyif.se
-,,Hira IK,54926,Rimfrostgatan 113,Abedin Belaj,418 40,,Göteborg,Göteborg,,,
-,,Hisingsbacka FC,2031,Box 4187,,42204,,HISINGS BACKA,Göteborg,kansli@hbfc.se,,http://www.hbfc.se
-,,Hjuviks AIK,21414,Torslanda Hästeviksväg 59,,42341,,Torslanda,Göteborg,hjuviksaik@hotmail.com,,https://hjuviksaik.myclub.se/
-,,Hovås Billdal IF,2075,Box 2004,,436 02,,HOVÅS,Göteborg,nina@hovasbilldal.se; peter@hovasbilldal.se ,,http://www.hovasbilldal.se
-,,Hålta IK,2124,Matskärsvägen 88,Tony Tenvid,442 75,,LYCKE,Kungälv,fotboll@haltaik.se,,www.haltaik.se
-,,Hällesåker IF,8353,Raneredsvägen 5,,437 92,,LINDOME,Mölndal,info@hallesakerif.nu; jesper.loenn@gmail.com,,www.hallesakerif.nu
-,,Hälsö BK,2150,Box 256,,47512,,HÄLSÖ,Öckerö,lisa.pettersson@live.se,,www.halsobk.se
-,,Härryda IF,2159,Lerdalsvägen 1,,43892,,HÄRRYDA,Härryda,harrydaif@hotmail.com; Albin.030414@gmail.com; Bako.lofgren@harryda.se,,www.laget.se/harrydaif
-,,Högaborg Käringön FC,31890,Stampgatan 64 Lgh 1702,Torsten Landergren,41101,,GÖTEBORG,Göteborg,info@hkfc.se,,http://www.hkfc.se
-,,Högsbo FF ,66945,Golfstigen 5,,43650,,Hovås,Göteborg,hogsboff@gmail.com,,
-,,Hönö IS,2197,Lindblomsvägen 30,,475 42,,HÖNÖ,Öckerö,Ordforande@honois.se,,www.laget.se/honois
-,,IF Mölndal Fotboll,8395,Idrottsvägen 5,,43162,,MÖLNDAL,Mölndal,mail@molndalfotboll.com,,http://www.molndalfotboll.com
-,,IF Vardar/Makedonija,4328,"Klubbhuset, Generatorsplan",,41705,,GÖTEBORG,Göteborg,Ifvardarmakedonija@gmail.com,,https://www.svenskalag.se/IFVardarMakedonija
-,,IF Warta,4547,Södra Sälöfjordsgatan 29,,41873,,GÖTEBORG,Göteborg,fuifwarta@gmail.com,,ifwarta.se
-,,IF Väster,4503,Box 206,,421 22,,Västra Frölunda,Göteborg,info@ifvaster.com,,http://www.ifvaster.com
-,,IFK Björkö,2236,Ekvägen 4,Malin Sandström,475 37,,BOHUS-BJÖRKÖ,Öckerö,epost@ifkbjorko.nu,,http://www.ifkbjorko.nu
-,,IFK Göteborg,2250,Kamratgårdsvägen 50,,41655,,GÖTEBORG,Göteborg,info@ifkgoteborg.se,,www.ifkgoteborg.se
-,,IFK Göteborg Futsal,40671,Kvibergs Port 6,,41527,,Göteborg,Göteborg,info@ifkgoteborgfutsal.se,,www.ifkgoteborgfutsal.se
-,,IFK Hindås,2255,Sportvägen 9,,43898,,HINDÅS,Härryda,kansli@ifkhindas.se,,www.ifkhindas.com
-,,IFK Hällingsjö,8357,Björkängsvägen 3,,43896,,HÄLLINGSJÖ,Härryda,sebastian.valenzuela@live.se,,http://www.ifkhallingsjo.se/
-,,IK Kongahälla,8372,Karebyvägen 4,,442 42,,KUNGÄLV,Kungälv,linus.carlstrom@ikkongahalla.com; tanja.ivanova@ikkongahalla.com; johan.lindberg@ikkongahalla.com; ikkongahalla1906@gmail.com,,www.ikkongahalla.com
-,,IK Surd,3919,Eklanda Hage 143b,,43149,,GÖTEBORG,Göteborg,nslattman@gmail.com,,www.iksurd.se
-,,IK Virgo,25892,Ljungbackegatan 1b,Röda klubbstugan längst ner på gatan,412 59,,GÖTEBORG,Göteborg,kansli@ikvirgo.se,,http://www.ikvirgo.se
-,,IK Zenith,4573,Zenithgården,,42355,,TORSLANDA,Göteborg,kansliet@ikzenith.se; robert.niklasson@ikzenith.se,,http://www.ikzenith.se/
-,,IK Zenith FF,66977,Zenithgården 1,,42355,,Torslanda,Göteborg,kansliet@ikzenith.se,,http://www.ikzenith.se
-,,Inter Göteborg IF,52864,Släpharvsgatan 5C,,43147,,Mölndal,Göteborg,Intergif@outlook.com,,www.svenskalag.se/intergif
-,,Jitex BK,31889,Idrottsvägen,,43162,,MÖLNDAL,Mölndal,info@jitex.se,,www.jitex.se
-,,Johannebergs IF,23732,Sagogången 42,Rino Wiger,42245,,Hisingsbacka,Göteborg,rino.wiger@gmail.com,,https://www.svenskalag.se/johannebergsif
-,,Jonsereds IF,8365,Jons Väg 23,,433 75,,JONSERED,Partille,kansli@jonseredsif.se,,http://www.jonseredsif.se/
-,,Järnbrotts IF,8366,Musikvägen 42,Reine Tilly,421 39,,VÄSTRA FRÖLUNDA,Göteborg,jarnbrottsif@gmail.com,,www.laget.se/JARNBROTT
-,,Kalvsunds IF,8367,Gamla vägen 19,,475 36,,KALVSUND,Öckerö,info@kalvsundsif.se,,www.laget.se/kalvsundsif
-,,Kareby IS,2482,Hagenvägen 73,,442 46,,KAREBY,Kungälv,fotboll@kareby.com,,http://www.kareby.com
-,,KF Velebit,4353,Box 22033,,40072,,GÖTEBORG,Göteborg,info@velebit.se,,http://www.velebit.se
-,,KIF Bosna Ljiljan,29934,Temperaturgatan 80,,41841,,GÖTEBORG,Göteborg,sejad.dz@gmail.com,, www.laget.se/BOSNAIFGBG/15160-start.html
-,,Knippla IK,8370,Box 76,,47513,,KÄLLÖ-KNIPPLA,Öckerö,fredrik.lindegren@volvocars.com; ulf@kik.nu,,www.kik.nu
-,,Kode IF,2590,Släbo 120,,44296,,KODE,Kungälv,kode.if@telia.com,,https://www.svenskalag.se/kodeif
-,,Kortedala IK,56005,Julaftonsgatan 58,,415 44,,Göteborg,Göteborg,kansli.kortedalaik@yahoo.com,,
-,,Kungsladugårds BK,2656,Apelsingatan 4,,42654,,VÄSTRA FRÖLUNDA,Göteborg,info@kungsladugardsbk.se; marcus.angelin@kungsladugardsbk.se,,www.kungsladugardsbk.se
-,,Kungälvs FF,24814,Box 397,,44211,,KUNGÄLV,Kungälv,info@kungalvsff.se; ordforande@kungalvsff.se,,kungalvsff.web.sportadmin.se
-,,Kviberg FF ,67165,Allhelgonagatan 19,Mohamed Abdiaziz Adan,41545,,Göteborg,Göteborg,vladimir.karanovic@icloud.com,,https://www.svenskalag.se/kvibergff
-,,Kållered SK,2687,Tulebovägen 17,,42834,,KÅLLERED,Mölndal,fotboll@kalleredsk.se; planbokningksk@gmail.com,,http://www.kalleredsk.se
-,,Kärra Dragons FC,52050,Båtsman Lustigs gata 64,Therese Källberg,42257,,HisingsBacka,Göteborg,varberg2000@hotmail.com; matijevicdarko@hotmail.com,,
-,,Kärra KIF,2697,Burmans gata 3,,425 33,,HISINGS KÄRRA,Göteborg,info@karrakif.se,,www.karrakif.se
-,,Landala IF,33221,Gibraltargatan 37,,41279,,GÖTEBORG,Göteborg,landalaif@gmail.com,,www.landalaif.com
-,,Landvetter IF 2003,38193,Tahultsvägen 60,,438 35,,LANDVETTER,Härryda,info@landvetterif.se ;jonas.andersson@landvetterif.se,,http://www.landvetterif.se
-,,Landvetter IS,2727,Tahultsvägen 60,,438 35,,LANDVETTER,Härryda,landvetter.is@telia.com,,http://landvetteris.com
-,,Lekstorps IF,2748,Kumminvägen 1,Cathrine Svensson,443 70,,GRÅBO,Lerum,kansli@lekstorpsif.se,,www.lekstorpsif.se
-,,Lerums IS,2755,Idrottsvägen 2,,443 31,,LERUM,Lerum,ninos@lerumsis.se; ,,www.lerumsis.se
-,,Lindholmens BK,8381,Björcksgatan 52 C,Larry Hedlund,416 52,,GÖTEBORG,Göteborg,larry.hedlund@infranord.se,,
-,,Lindome GIF,2798,Hällesåkersvägen 5,,43791,,LINDOME,Mölndal,info@lindomegif.se,,www.lindomegif.se
-,,Lundby IF,40097,Munkedalsgatan 10,,41716,,GÖTEBORG,Göteborg,info@lundbyif.se,,www.lundbyif.se
-,,Lunden Överås BK,2866,Wrangelsgatan 5 c,Egon Hansen,416 62,,GÖTEBORG,Göteborg,kansli@lundenobk.se,,www.lundenobk.se
-,,Låtta Marta IF,44620,Ängskogsvägen 10 A,Anna Johansson,41743,,GÖTEBORG,Göteborg,l8marta@hotmail.se,,www.svenskalag.se/l8martaif
-,,Marockanska Göteborg FF,66782,Lilliegatan 10,Amir Berzouami,41657,,Göteborg,,marockanskagoteborgff@gmail.com,,svenskalag.se/marockanskagoteborgff
-,,Marstrands BK,54952,Täljstensgatan 7,,44254,,Ytterby,Kungälv,,,
-,,Marstrands IS,53369,Nygatan 40,,44266,,Marstrand,Kungälv,,,
-,,Masthuggets BK,2981,Fjällgatan 27,,41317,,GÖTEBORG,Göteborg,info@masthugget.com,,http://www.masthugget.com
-,,Menisken IF,8392,Radiofyrsgatan 5,Johan Anäng,42133,,Västra Frölunda,Göteborg,johan@teamtastic.se,,http://www.menisken.se
-,,Mossens BK,8393,Gibraltargatan 37,,41279,,GÖTEBORG,Göteborg,kansli@mossensbk.se,,http://www.mossensbk.se
-,,Mölndal United FC,56105,Stenbrogatan 3E,,43162,,Mölndal,Mölndal,infmufc@gmail.com,,
-,,Mölnlycke IF,3070,Box 1,,43521,,MÖLNLYCKE,Härryda,kansli@molnlyckeif.se; anders.dahlstedt@molnlyckeif.se,,www.molnlyckeif.se
-,,Mölnlycke IS Ungdom ,66925,Azaleavägen 4,Daniel Berntsson,43537,,Mölnlycke,Härryda,daniel.Berntsson78@gmail.com,,https://www.laget.se/MolnlyckeIS-Ungdom
-,,Neutrala UF,40918,flygvädersgatan 8,,41838,,GÖTEBORG,Göteborg,moefarah13@gmail.com; aliyare.gaani@hotmail.com; neutrala97@gmail.com,,www.laget.se/NEUTRALA
-,,Nigerian Family KF,51919,övre kaserngåden 6,,41527,,göteborg,Göteborg,"info@nfagoteborg.com, omozid@yahoo.com",,
-,,Nokhba FC ,56564,Paprikagatan 9,Samir Albtish,42447,,Angered,,shivan.rashid@my.com,,
-,,Nol IK,3115,Box 10,,44921,,NÖDINGE,Ale,nolik1928@live.se,,https://www.laget.se/nolik
-,,North Kings FC ,56446,,,,,,Göteborg,kenzofficial@outlook.com,,
-,,NorthLion FC,66836,Munkebäcksgatan 14 c,,41653,,Göteborg,Göteborg,daniel.olsson@fjaraskupan.se,,
-,,Näsets SK,3220,Bergsätersgatan 7,,42166,,VÄSTRA FRÖLUNDA,Göteborg,kansliet@nasetssk.se; foreningsutvecklare@nasetssk.se,,http://www.nasetssk.se
-,,Nödinge SK Fotboll,3234,Box 17,,44921,,NÖDINGE,Ale,nskfotboll@hotmail.se,,http://www.laget.se/nskfotboll
-,,Partille IF FK,45375,Nygårsvägen 1,Partille IF FK,43332,,Partille,Partille,ordforande@partilleif.se,,www.partilleif.se
-,,Poseidon FC,66870,Bögatan 50B,,41272,,Göteborg,Göteborg,robert@poseidonfc.se,,www.poseidonfc.se
-,,Proletären FF,3314,Åkereds Skolväg 22,,42166,,VÄSTRA FRÖLUNDA,Göteborg,kontakt@proletarenff.se,,proletarenff.se
-,,Pushers BK,8404,Nordhemsgatan 69 A,Leif Fransson,41309,,GÖTEBORG,Göteborg,Pushers48@gmail.com; Nicholas.Singleton@goteborgsregionen.se ,,https://www.laget.se/PUSHERSBK
-,,Qviding FIF,24330,Härlanda Park 6B,,416 52,,GÖTEBORG,Göteborg,kansli@qviding.se,,www.qviding.se
-,,Rampen IK,52444,Vantgatan 3B,Kaisa Gunnedal,414 56,,Göteborg,Mölndal,info@rampen.co,,www.rampen.co
-,,Real Maskin BK,22849,Nymånegatan 5,Anders Bengtsson,41508,,GÖTEBORG,Göteborg,real.maskin@gmail.com,,www.realmaskin.se
-,,Riyyo Atletic FC ,55995,Kryddhyllan 23,,42439,,Angered,Göteborg,Riyyoatleticfc@gmail.com,,
-,,Romelanda UF,3387,Romevi Hög 130,,44292,,ROMELANDA,Kungälv,kansliet@ruf.nu,,www.ruf.nu
-,,Rödbo IF,8411,Lotsgatan 12,Lars-Ivan Claesson,414 58,,Göteborg,Kungälv,Ian_cla2@yahoo.se,,www.laget.se/rodboif
-,,Rörö IF,3474,"Lennart Zackrisson, Box 82",,47518,,RÖRÖ,Öckerö,lennart125@hotmail.com,,
-,,Salaam IF ,67052,Långströmsgatan 19C,,41870,,Göteborg,Göteborg,ali.al-shimary@outlook.com,,www.salaamif.se
-,,Sandarna BK,3500,Ostindiegatan 25,,41452,,GÖTEBORG,Göteborg,sandarna@hotmail.se,,https://sandarnabk.sportadmin.se/
-,,Serbiska KIF Semberija Göteborg,30924,Kalendervägen 2,,41534,,GÖTEBORG,Göteborg,zoran_semberija@hotmail.se,,www.laget.se/semberija
-,,Serbiska KoIF Kozara,8374,Dagjämningsgatan 1,,41536,,Göteborg,Göteborg,kozara.goteborg@hotmail.com; zoran.vajagic@hotmail.com,,www.laget.se/kozara
-,,SF Sindjelic,3569,Box 13011,,40251,,GÖTEBORG,Göteborg,sfsindjelic@gmail.com,,http://www.sindjelic.se
-,,SG Ruddalen IF,1771,Musikvägen 61,,42139,,Västra Frölunda,Göteborg,kansli@sgruddalen.se,,www.sgruddalen.se
-,,Sjövalla FK,3586,Finnsjövägen 12,,435 41,,MÖLNLYCKE,Härryda,sjovallafkfotboll@gmail.com,,https://www.laget.se/SjovallaFKfotboll
-,,SK Argo,8295,Ekedalsgatan 26,,41468,,GÖTEBORG,Göteborg,info@skargo.se; petersjogren76@hotmail.com; mande257@volvocars.com,,http://skargo.se
-,,Skogens IF,3623,Johan Alins gata 2,,41476,,GÖTEBORG,Göteborg,skogens.if@gmail.com,,http://www.laget.se/skogensif
-,,Solväders FC,43467,Klarvädersgatan 1,Hector Valeria,41839,,Göteborg,Göteborg,solvaders97@gmail.com ,,Facebook sida: Biskopsgarden E Vi
-,,Solängens BK,8421,Bäckstensgatan 15,,43149,,MÖLNDAL,Mölndal,kansli@solangensbk.se,,www.laget.se/Solangensbk
-,,Stenkullen GoIK,3782,Granitvägen 3,,44360,,Stenkullen,Lerum,info@stenkullengoik.com,,http://www.stenkullengoik.com
-,,Styrsö BK,3884,Brattenskogen 11,Dragan Janicijevic,43084,,Styrsö,Göteborg,info@styrsobk.se,,http://www.styrsobk.se
-,,Surte IS FK,42009,Box 2050,,445 02 ,,SURTE,Ale,surtebohus@gmail.com,,http://www.laget.se/surteis
-,,Swed-Som IF ,67002,Bergsjödalen 57,,41561,,Göteborg,Göteborg,ssv_98@hotmail.com,,
-,,Svensk-Somaliska FS,51184,Fjäderhavsgatan 105,Nagy,424 66,,Angered,Göteborg,geza@interkultura.net; mfmsam@hotmail.com,,
-,,Syrianska Göteborg FC,44089,Fotbollsvägen 48,,42433,,Angered,Göteborg,gabriel.yildirim@hotmail.com,,www.syrianskagoteborg.se
-,,Säve SK,3972,Tåfjällsvägen 15,,42371,,SÄVE,Göteborg,info@savesk.se,,www.laget.se/savesk
-,,Sävedalens IF,8426,Hultvägen 2,,433 64,,SÄVEDALEN,Partille,kansli@savedalensif.se; kassor@savedalensif.se,,www.savedalensif.se
-,,Tollereds IF,4099,Gamla Sågvägen 6,Thomas Balmér,44850,,TOLLERED,Lerum,info@tolleredsif.se,,http://www.tolleredsif.se
-,,Torslanda FC,40286,Torslanda Idrottsväg 17,Torslanda IK,42332,,TORSLANDA,Göteborg,patrik.falk@torslandaik.com,,www.torslandaik.com
-,,Torslanda IK,4121,Torslanda Idrottsväg 17,,423 32,,TORSLANDA,Göteborg,kansli@torslandaik.com,,http://www.torslandaik.com
-,,Tuve BK ,54682,Lillhagsvägen 291,C/O Jonas Sand,42250,,Hisings Backa,Göteborg,styrelsetuvebk@gmail.com,,
-,,Tynnered FC,52395,Safirgatan 13,Ibrahim Maruvge,421 48,,Västra Frölunda,Göteborg,tynneredfc@hotmail.com,,
-,,Utbynäs FF,38984,Lemmingsgatan 5,Utbynäs SK,41507,,GÖTEBORG,Göteborg,christer.oxien@utbynassk.se,,www.utbynassk.se
-,,Utbynäs SK,4292,Utbynäs SK,,415 72,,GÖTEBORG,Göteborg,kansli-fb@utbynassk.se,,www.utbynassk.se
-,,Utsiktens BK,4293,Musikvägen 55,Ruddalens IP,42139,,VÄSTRA FRÖLUNDA,Göteborg,info@utsiktensbk.se; henrik.frendin@utsiktensbk.se; tompas296@gmail.com,,http://www.utsiktensbk.se
-,,Utsiktens Elitfotboll AB,94293,Musikvägen 55,Ruddalens IP,42139,,Västra Frölunda,Göteborg,info@utsiktensbk.se,,http://www.utsiktensbk.se
-,,Valhall BK,66992,Skolvägen 3,Magnus Hall,44250,,Ytterby,Göteborg,helge86@hotmail.com,,
-,,Valhalla FC,55902,Tryggvegatan 6,,41727,,Göteborg ,Göteborg,Valhallaafc@gmail.com,,Svenskalag.se/gwfc-herr
-,,Vatra KIF,53618,Fjäderharvsgatan 24,Behar Tahiri,424 66,,Angered,Göteborg,tahiri_behar_@hotmail.com,,
-,,WIP Idrottsförening,55691,Kvarnkullevägen 2D,Camilla Augustin,42333,,Torslanda,Göteborg,fredrik@padel-academy.se,,
-,,Vitalis Göteborg FF,66909,Ebbe Lieberathsgatan 31C,,41282,,Göteborg,Göteborg,atilasamkhanzadeh@gmail.com,,
-,,Vrångö IF,8440,Box 49,,43083,,VRÅNGÖ,Göteborg,fribergjohan0@gmail.com; vrangoif@hotmail.com; claes.friberg@icloud.com,,www.laget.se/vrangoif
-,,Västkurd BK,52378,Vintervädersgatan 15,Yakup Sari,41836,,Göteborg,Göteborg,Nicolas@travel4you.se; vastkurdbk@gmail.com; vurre74@hotmail.com; dendelen@gmail.com; ulasaltuntas@gmail.com,,www.vastkurdbk.se
-,,Västra Frölunda IF,4526,Klubbvägen 19,,421 47,,VÄSTRA FRÖLUNDA,Göteborg,info@vastrafrolunda.com,,http://www.vastrafrolunda.com
-,,Youth FC,66740,BOX 2002,,43302,,SÄVEDALEN ,Partille,mats@majaab.se,,
-,,Ytterby IS,4568,Box 2134,,442 02,,Ytterby ,Kungälv,kansli@ytterbyis.nu,,http://www.ytterbyis.nu
-,,Älvsborg FF,8326,Box 5005,,42674,,VÄSTRA FRÖLUNDA,Göteborg,kansli@alvsborgff.se,,http://www.alvsborgff.se
-,,Älvängens IK,4648,Hövägen 23,,446 32,,ÄLVÄNGEN,Ale,Alvangens.Idrottsklubb@outlook.com,,www.laget.se/alvangensik
-,,Öckerö IF,4663,Norgårdsvägen 89,,475 31,,ÖCKERÖ,Öckerö,malin.andersson@ockeroif.se,,http://www.ockeroif.se
-,,Öjersjö IF,31259,Tallmossevägen 9,,43350,,ÖJERSJÖ,Partille,kansli@ojersjoif.se,,http://www.ojersjoif.se
-,,Önnereds IK,4679,Box 113,,421 21,,VÄSTRA FRÖLUNDA,Göteborg,onneredsik@hotmail.com,, www.svenskalag.se/onneredsik
-,,Örgryte IS Fotboll,51822,Korndalsvägen 2,,412 76,,Göteborg,Göteborg,andreas.karlsson@oisfotboll.se; max.pahlman@oisfotboll.se,,www.oisfotboll.se
-,,Ösets BK,8444,Svanebäcksgatan 16,,41471,,GÖTEBORG,Göteborg,oset.kassor@gmail.com;bejo52@hotmail.com,,www.svenskalag.se/osetsbk
-,,,,,,,,,,,,
-,,,,,,,,,,,198 föreningar,
+# examine.py - corrected version
+import pandas as pd
 
+# Since we're already in the data directory, just use the filename
+df = pd.read_csv('companies_geocoded.csv')
+
+# Filter to failed geocoding
+failed = df[df['geocoding_confidence'] == 'failed']
+
+# Look for patterns
+print("Common patterns in failed addresses:")
+print(failed['registered_address'].value_counts().head(20))
+
+# Let's also understand more about these failures
+print(f"\nTotal failed addresses: {len(failed)}")
+print(f"Percentage of total: {len(failed) / len(df) * 100:.1f}%")
+
+# Check if certain districts have more failures
+print("\nFailed geocoding by district:")
+district_failures = failed['district'].value_counts()
+print(district_failures.head(10))
+
+# Look for common words in failed addresses
+print("\nCommon terms in failed addresses:")
+common_terms = {}
+for address in failed['registered_address'].dropna():
+    words = address.lower().split()
+    for word in words:
+        if len(word) > 3:  # Skip short words
+            common_terms[word] = common_terms.get(word, 0) + 1
+
+# Sort by frequency
+sorted_terms = sorted(common_terms.items(), key=lambda x: x[1], reverse=True)
+for term, count in sorted_terms[:15]:
+    print(f"  '{term}': {count} occurrences")
 
