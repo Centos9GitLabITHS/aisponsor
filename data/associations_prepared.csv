@@ -1,0 +1,170 @@
+id,name,latitude,longitude,size_bucket,Adress,Postort
+1,Afganska Göteborg FF,57.71596505625,11.88830339375,small,Blåsvädersgatan,Göteborg
+2,AIF Göteborg,57.6812936,11.9294918,large,Kungsladugårdsgatan 100,GÖTEBORG
+3,Alealiber IF,57.723051,12.0328446,medium,Ahrenbergsgatan 27,Göteborg
+4,Angered BK,57.7778656,12.0164021,medium,Knattens väg 12,Angered
+5,Angered MBIK,57.8146776,12.0323338,small,Svarte Filips gata 10,ANGERED
+6,Angereds IS,57.7948247,12.0546202,small,Högaffelgatan 15,Angered
+7,Annedal FF,57.694819,11.9593032,small,Nilssonsberg 31,Göteborg
+8,Apollon FF Göteborg ,57.565622883333326,11.931339533333333,large,Våmmedalsvägen 8,Kållered
+9,Assyriska BK,57.6508038,11.9035503,medium,Diamantgatan 1,VÄSTRA FRÖLUNDA
+10,Athletic FC Angered ,57.7489988,12.0339973,medium,Kalendervägen 16,GÖTEBORG
+11,Atletico Göteborg FC ,57.7132795,12.0063108,small,"Danska vägen 88, Göteborg",Göteborg
+12,Azalea BK,57.6893864,11.9344163,large,Ekedalsgatan 20,GÖTEBORG
+13,Balltorps FF,57.71566997499999,12.061390817857143,medium,Gundefjällsgatan 115,Mölndal
+14,Bellevue City FK ,57.6943305,11.9693317,small,Karl Gustavsgatan 53,Göteborg
+15,Bergsjö IF,57.7526695,12.0568619,small,"Sjustjärnan, Bergsjövallen",GÖTEBORG
+16,Bergums IF,57.8303857,11.9171153,small,Bergumsvallen,OLOFSTORP
+17,Bjurslätts IF,57.730148,11.9330858,small,Hällskriftsgatan 3,GÖTEBORG
+18,Björndammens BK,57.6908954,11.9360313,medium,Grenvägen 3,PARTILLE
+19,BK Björkåsen,57.7802454,12.0609278,small,Nolängsvägen 12,Angered
+20,BK Häcken,57.7411732,11.9473239,small,Entreprenadvägen 6,GÖTEBORG
+21,BK Häcken FF,57.7411732,11.9473239,medium,Entreprenadvägen 6,Göteborg
+22,BK S:t Jakob,57.7029311,11.9748047,small,Parkgatan 4,GÖTEBORG
+23,BK Skottfint,57.7047696,11.9318188,small,Verkmästaregatan 2,GÖTEBORG
+24,Brämaregårdens FC,57.71060287844827,11.890308482758622,small,Blidvädersplan,Göteborg
+25,Chalmers Studentkårs IS,57.6942126,11.9780429,small,Teknologgården 2,Göteborg
+26,Club América FF,57.716712202500005,11.89526236,medium,Sommarvädersgatan 18-1201,Göteborg
+27,Croatia Göteborg,57.7522147,12.0396423,small,Kortedala Idrottsväg 15,GÖTEBORG
+28,Dalen/Krokslätts FF,57.6778392,11.987479566666666,medium,Krokslätts Storgata 44,MÖLNDAL
+29,Diseröd SK,57.70056967999999,12.00413579,medium,ULVEGÄRDEGATAN 49,KUNGÄLV
+30,Donsö IS,57.604849,11.8044952,small,Lurkenvägen 2,DONSÖ
+31,Elisedals IS,57.72190866666666,12.009794153333331,medium,Löparegatan 2,GÖTEBORG
+32,Eriksbergs IF,57.7048777,11.9108867,small,Danagatan 16,GÖTEBORG
+33,Espanyol Göteborg IF ,57.7214165,11.9392444,small,Trädesgatan 5A ,Göteborg
+34,FC Fyrklövern,57.727155008,11.932013047999998,large,Fyrklöversgatan,Göteborg
+35,FC Heden,57.8066728,11.9795949,large,Johannas väg 26,Göteborg
+36,FC Härlanda,57.643982,11.9126701,medium,Lilla Korsåsgatan 28,Västra Frölunda
+37,FC Komarken,57.760190375,12.050918625,small,Kongahällagatan 34 A,KUNGÄLV
+38,FC Kålltorp ,57.7169076,12.0217515,small,Björcksgatan 11,Göteborg
+39,FC Ljiljan Göteborg,57.6261422125,11.955552384375,medium,Ekspinnarevägen 19,Mölnlycke
+40,FC Majorna,57.6964068,11.9347847,small,Bangatan 23,Göteborg
+41,Finlandia Pallo AIF,57.750462178125005,11.918145346875,small,Hinnebäcksgatan,GÖTEBORG
+42,Fotö GoIF,57.64824598604651,11.79998215116279,small,Dörjevägen 18,Fotö
+43,Framtida Idrottsförening ,57.7469774,11.9756054,small,"Markurellgatan 24, lgh 1102",Hisings Backa
+44,Fröjdens FK,57.680915,12.0018317,large,Mölndalsvägen 87D,Göteborg
+45,Fässbergs IF,57.7882203,12.0963704,small,Idrottsvägen 3,MÖLNDAL
+46,GAIS,57.6805911,12.0295318,medium,Gamla Boråsvägen 75,GÖTEBORG
+47,GAIS Futsal,57.678873825,11.9482928,small,Årsringagatan 50,Mölndal
+48,Galacticos FC,57.7618241,12.0541806,medium,Galileis Gata 13,Göteborg
+49,Gambian Mix IF,57.7134989,11.9127278,medium,Inägogatan 23C,Göteborg 
+50,Gamlestaden FF,57.7357925,11.792644433333331,small,Eklövsvägen 216,Lerum
+51,Gatans Lag FF,57.7162171,12.0171829,large,Härlanda Park 6B,Göteborg
+52,GoldCoast FC,57.7591586734375,12.0711968640625,medium,Tellusgatan 8 lgh 452,GÖTEBORG 
+53,Gothenburg Celtic FC,57.6990285,11.9591206,large,Haga Östergata 18,Göteborg
+54,Grunden BOIS,57.7380158,12.0349041,large,Krutvägen 4,GÖTEBORG
+55,Guldhedens IK,57.6866629,11.9684412,medium,Dr. Heymans gata 1F,GÖTEBORG
+56,Gunnared KIF,57.8004972,12.0651938,large,Gunnaredsvallen 4,Angered
+57,Gunnilse IS,57.7778656,12.0164021,small,Knattens Väg 12,ANGERED
+58,Gårda BK,57.69443050625,11.923113075,small,Katrinebergsgatan 4B,Mölndal
+59,Gårdsten FC,57.8061487,12.0314742,small,Muskotgatan 32,Angered
+60,Götafors BK ,57.72575222222223,11.915882266666667,small,Bifrostgatan 48E,Mölndal
+61,Götaholms BK,57.7344596,12.011060566666666,small,Ambrosiusgatan 2,GÖTEBORG
+62,Göteborgs City FF,57.6891272,11.9932615,small,Norra Krokslättsgatan 13,Göteborg
+63,Göteborgs FF,57.6893864,11.9344163,medium,Ekedalsgatan 20,GÖTEBORG
+64,Göteborgs SIF,57.68646140422536,11.982202761971832,small,Gibraltargatan 39-41,GÖTEBORG
+65,Hammarkullens BK,57.7972417,12.0551299,small,Fjäderharvsgatan 115,Angered
+66,Hermansby IF,57.6312966625,11.9292968125,medium,Lyckevägen 19,KÄRNA
+67,Hira IK,57.7308679,11.8876593,small,Rimfrostgatan 113,Göteborg
+68,Hjuviks AIK,57.7187576,11.7207528,medium,Torslanda Hästeviksväg 59,Torslanda
+69,Hålta IK,57.64638486470588,11.87236195882353,small,Matskärsvägen 88,LYCKE
+70,Hällesåker IF,57.66390154285715,11.876849406122448,large,Raneredsvägen 5,LINDOME
+71,Härryda IF,57.68415391999999,12.00262846,medium,Lerdalsvägen 1,HÄRRYDA
+72,Högaborg Käringön FC,57.70898204200001,11.985288857999995,small,Stampgatan 64 Lgh 1702,GÖTEBORG
+73,Högsbo FF ,57.6145346,11.9303156,small,Golfstigen 5,Hovås
+74,Hönö IS,57.7062866,11.9290874,medium,Lindblomsvägen 30,HÖNÖ
+75,IF Mölndal Fotboll,57.7882203,12.0963704,medium,Idrottsvägen 5,MÖLNDAL
+76,IF Warta,57.7126853,11.9025989,medium,Södra Sälöfjordsgatan 29,GÖTEBORG
+77,IFK Björkö,57.7850637,12.0867808,medium,Ekvägen 4,BOHUS-BJÖRKÖ
+78,IFK Göteborg,57.6973088,12.0288277,small,Kamratgårdsvägen 50,GÖTEBORG
+79,IFK Göteborg Futsal,57.73053706666667,12.032913333333331,small,Kvibergs Port 6,Göteborg
+80,IFK Hindås,57.707242,11.7668321,small,Sportvägen 9,HINDÅS
+81,IFK Hällingsjö,57.7185958,11.7253171,large,Björkängsvägen 3,HÄLLINGSJÖ
+82,IK Kongahälla,57.76365413333334,11.865690455555557,medium,Karebyvägen 4,KUNGÄLV
+83,IK Virgo,57.68500848000001,11.98073936,small,Ljungbackegatan 1b,GÖTEBORG
+84,IK Zenith,57.7515891,11.8284141,small,Zenithgården,TORSLANDA
+85,IK Zenith FF,57.7515891,11.8284141,small,Zenithgården 1,Torslanda
+86,Inter Göteborg IF,57.79754723563219,12.053522495402298,small,Släpharvsgatan 5C,Mölndal
+87,Jitex BK,57.7882203,12.0963704,medium,Idrottsvägen,MÖLNDAL
+88,Johannebergs IF,57.7423562,11.9761058,medium,Sagogången 42,Hisingsbacka
+89,Jonsereds IF,57.816984,11.9075666,large,Jons Väg 23,JONSERED
+90,Järnbrotts IF,57.6599406,11.9105612,small,Musikvägen 42,VÄSTRA FRÖLUNDA
+91,Kalvsunds IF,57.66767412352941,11.859881276470588,small,Gamla vägen 19,KALVSUND
+92,Kareby IS,57.77083082878787,11.835537030303032,medium,Hagenvägen 73,KAREBY
+93,KIF Bosna Ljiljan,57.7335078,11.8846269,medium,Temperaturgatan 80,GÖTEBORG
+94,Kortedala IK,57.7607173,12.0361007,medium,Julaftonsgatan 58,Göteborg
+95,Kungsladugårds BK,57.6554537,11.8818321,medium,Apelsingatan 4,VÄSTRA FRÖLUNDA
+96,Kviberg FF ,57.7618758,12.0380662,small,Allhelgonagatan 19,Göteborg
+97,Kållered SK,57.740240081818186,11.942287263636365,medium,Tulebovägen 17,KÅLLERED
+98,Kärra Dragons FC,57.759475,11.9618932,small,Båtsman Lustigs gata 64,HisingsBacka
+99,Kärra KIF,57.7984282,11.9875589,small,Burmans gata 3,HISINGS KÄRRA
+100,Landala IF,57.6823777,11.9843687,small,Gibraltargatan 37,GÖTEBORG
+101,Landvetter IF 2003,57.71304308181818,11.769237054545457,small,Tahultsvägen 60,LANDVETTER
+102,Landvetter IS,57.71304308181818,11.769237054545457,medium,Tahultsvägen 60,LANDVETTER
+103,Lekstorps IF,57.6914198,11.976667,small,Kumminvägen 1,GRÅBO
+104,Lerums IS,57.7882203,12.0963704,medium,Idrottsvägen 2,LERUM
+105,Lindholmens BK,57.717286023387096,12.02848200080645,large,Björcksgatan 52 C,GÖTEBORG
+106,Lindome GIF,57.8065099,12.1811994,small,Hällesåkersvägen 5,LINDOME
+107,Lundby IF,57.7192736,11.9206361,small,Munkedalsgatan 10,GÖTEBORG
+108,Lunden Överås BK,57.71214669750001,12.00269394,medium,Wrangelsgatan 5 c,GÖTEBORG
+109,Låtta Marta IF,57.75458340769232,11.93186155128205,small,Ängskogsvägen 10 A,GÖTEBORG
+110,Marockanska Göteborg FF,57.7117635,12.0161054,small,Lilliegatan 10,Göteborg
+111,Marstrands BK,57.744129775000005,11.9574511625,small,Täljstensgatan 7,Ytterby
+112,Marstrands IS,57.66573686111112,11.86394465,small,Nygatan 40,Marstrand
+113,Masthuggets BK,57.6953966,11.9396357,large,Fjällgatan 27,GÖTEBORG
+114,Menisken IF,57.6539102,11.9280375,medium,Radiofyrsgatan 5,Västra Frölunda
+115,Mossens BK,57.6823777,11.9843687,medium,Gibraltargatan 37,GÖTEBORG
+116,Mölndal United FC,57.70891521111111,11.929652111111112,large,Stenbrogatan 3E,Mölndal
+117,Mölnlycke IS Ungdom ,57.711785125000006,11.899042608333332,medium,Azaleavägen 4,Mölnlycke
+118,Neutrala UF,57.7249984,11.8870472,small,flygvädersgatan 8,GÖTEBORG
+119,Nigerian Family KF,57.7367506,12.0304551,large,övre kaserngåden 6,göteborg
+120,Nokhba FC ,57.8195764,12.0317622,medium,Paprikagatan 9,Angered
+121,NorthLion FC,57.71516225949368,12.024604520886076,medium,Munkebäcksgatan 14 c,Göteborg
+122,Näsets SK,57.6320864,11.9006232,large,Bergsätersgatan 7,VÄSTRA FRÖLUNDA
+123,Partille IF FK,57.6641977,11.8810872,small,Nygårsvägen 1,Partille
+124,Poseidon FC,57.701556,12.0156357,small,Bögatan 50B,Göteborg
+125,Proletären FF,57.6343995,11.9028735,small,Åkereds Skolväg 22,VÄSTRA FRÖLUNDA
+126,Pushers BK,57.696163933613455,11.95007534201681,small,Nordhemsgatan 69 A,GÖTEBORG
+127,Qviding FIF,57.7162171,12.0171829,medium,Härlanda Park 6B,GÖTEBORG
+128,Rampen IK,57.6897807,11.9260452,large,Vantgatan 3B,Göteborg
+129,Real Maskin BK,57.744047,12.02762,small,Nymånegatan 5,GÖTEBORG
+130,Riyyo Atletic FC ,57.8033521,12.0240109,medium,Kryddhyllan 23,Angered
+131,Rödbo IF,57.6961863,11.9272519,small,Lotsgatan 12,Göteborg
+132,Salaam IF ,57.72473897263158,11.90108415052632,small,Långströmsgatan 19C,Göteborg
+133,Sandarna BK,57.6861747,11.9126746,small,Ostindiegatan 25,GÖTEBORG
+134,Serbiska KIF Semberija Göteborg,57.7472476,12.0311111,small,Kalendervägen 2,GÖTEBORG
+135,Serbiska KoIF Kozara,57.7511578,12.0235886,large,Dagjämningsgatan 1,Göteborg
+136,SG Ruddalen IF,57.6630738,11.9117081,small,Musikvägen 61,Västra Frölunda
+137,Sjövalla FK,57.63240438442623,11.961185741393445,medium,Finnsjövägen 12,MÖLNLYCKE
+138,SK Argo,57.6870139,11.9318664,medium,Ekedalsgatan 26,GÖTEBORG
+139,Skogens IF,57.6758877,11.936221283333332,small,Johan Alins gata 2,GÖTEBORG
+140,Solväders FC,57.7229773,11.8913202,large,Klarvädersgatan 1,Göteborg
+141,Solängens BK,57.6597376,11.8908908,large,Bäckstensgatan 15,MÖLNDAL
+142,Stenkullen GoIK,57.6311304,11.9475751,small,Granitvägen 3,Stenkullen
+143,Styrsö BK,57.6154611,11.7906686,small,Brattenskogen 11,Styrsö
+144,Swed-Som IF ,57.7593847,12.078642,small,Bergsjödalen 57,Göteborg
+145,Svensk-Somaliska FS,57.7970326,12.0549887,small,Fjäderhavsgatan 105,Angered
+146,Syrianska Göteborg FC,57.7685843,12.0291103,small,Fotbollsvägen 48,Angered
+147,Säve SK,57.8086097,11.9167788,medium,Tåfjällsvägen 15,SÄVE
+148,Sävedalens IF,57.7872778,12.1017575,medium,Hultvägen 2,SÄVEDALEN
+149,Tollereds IF,57.667136,11.8607742,small,Gamla Sågvägen 6,TOLLERED
+150,Torslanda FC,57.7179509,11.7587758,small,Torslanda Idrottsväg 17,TORSLANDA
+151,Torslanda IK,57.7179509,11.7587758,large,Torslanda Idrottsväg 17,TORSLANDA
+152,Tuve BK ,57.7646018,11.9505955,small,Lillhagsvägen 291,Hisings Backa
+153,Tynnered FC,57.6455098,11.9044775,small,Safirgatan 13,Västra Frölunda
+154,Utbynäs FF,57.7349916,12.0536182,small,Lemmingsgatan 5,GÖTEBORG
+155,Utbynäs SK,57.73375724,12.04427599,large,Utbynäs SK,GÖTEBORG
+156,Utsiktens BK,57.6632505,11.9105337,small,Musikvägen 55,VÄSTRA FRÖLUNDA
+157,Utsiktens Elitfotboll AB,57.6632505,11.9105337,medium,Musikvägen 55,Västra Frölunda
+158,Valhall BK,57.8049311,11.981176,medium,Skolvägen 3,Ytterby
+159,Valhalla FC,57.7346765,11.9151525,small,Tryggvegatan 6,Göteborg 
+160,Vatra KIF,57.7978917,12.0566193,medium,Fjäderharvsgatan 24,Angered
+161,WIP Idrottsförening,57.7232312,11.7706393,small,Kvarnkullevägen 2D,Torslanda
+162,Vitalis Göteborg FF,57.679849108333336,12.000955608333332,medium,Ebbe Lieberathsgatan 31C,Göteborg
+163,Västkurd BK,57.7251754,11.8959354,medium,Vintervädersgatan 15,Göteborg
+164,Västra Frölunda IF,57.6429523,11.9197916,medium,Klubbvägen 19,VÄSTRA FRÖLUNDA
+165,Älvängens IK,57.610585750000006,11.9343957,small,Hövägen 23,ÄLVÄNGEN
+166,Öckerö IF,57.64303391562501,11.938094703125,medium,Norgårdsvägen 89,ÖCKERÖ
+167,Öjersjö IF,57.628851866666665,11.960074396296296,small,Tallmossevägen 9,ÖJERSJÖ
+168,Örgryte IS Fotboll,57.817867033333336,11.884779833333337,small,Korndalsvägen 2,Göteborg
+169,Ösets BK,57.6871967,11.9185271,small,Svanebäcksgatan 16,GÖTEBORG

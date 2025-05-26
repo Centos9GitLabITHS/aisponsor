@@ -1,0 +1,31 @@
+id,name,member_count,address,lat,lon,size_bucket,founded_year
+1,Göteborg Bandyklub,738,"8713 Caleb Brooks Apt. 930, Göteborg",57.740742,11.999714,large,1989
+2,Mölndal Ishockeyklub,536,"031 Michele Cliffs, Mölndal",57.620135,11.968021,large,1959
+3,Lerum Handbollklub,785,"7382 Sanchez Mountains, Lerum",57.809214,12.276967,large,1999
+4,Lerum Handbollklub,55,"11656 Owens Stream Apt. 106, Lerum",57.744998,12.285006,small,1963
+5,Mölndal Handbollklub,580,"33387 Robert Harbors Suite 317, Mölndal",57.622989,12.059197,large,2009
+6,Kungälv Fotbollklub,517,"80132 Tucker Forest, Kungälv",57.84492,12.014834,large,1967
+7,Kungälv Handbollklub,503,"26064 Mitchell Square Suite 234, Kungälv",57.918789,11.989545,large,2014
+8,Kungälv Handbollklub,536,"98050 Breanna Parkway, Kungälv",57.864591,11.945916,large,2007
+9,Mölndal Bandyklub,583,"81219 Emma Freeway, Mölndal",57.689386,11.991131,large,2012
+10,Mölndal Innebandyklub,342,"93990 Robert Prairie Suite 435, Mölndal",57.63286,11.971148,medium,1980
+11,Partille Bandyklub,191,"6247 Hickman Cliffs, Partille",57.721371,12.110515,medium,1969
+12,Lerum Ishockeyklub,115,"9911 William Curve, Lerum",57.789995,12.290042,small,2003
+13,Partille Handbollklub,261,"35427 Carr Valley Apt. 841, Partille",57.743661,12.098077,medium,2003
+14,Kungälv Handbollklub,639,"1182 Campbell Fords, Kungälv",57.914606,11.931953,large,1998
+15,Göteborg Handbollklub,449,"48740 Cynthia Village Suite 005, Göteborg",57.753174,11.954461,large,2003
+16,Kungälv Basketklub,549,"427 Hoffman Creek, Kungälv",57.899987,12.019781,large,1978
+17,Lerum Bandyklub,734,"280 Aguilar Drive, Lerum",57.769164,12.258286,large,2001
+18,Mölndal Innebandyklub,687,"04505 Evelyn Shores Apt. 586, Mölndal",57.689451,12.055354,large,2018
+19,Lerum Fotbollklub,135,"22602 Patton Loop, Lerum",57.779789,12.2857,small,2004
+20,Lerum Ishockeyklub,385,"2160 Walker Viaduct, Lerum",57.738773,12.245416,medium,1977
+21,Partille Handbollklub,334,"4330 Raymond Harbors Apt. 458, Partille",57.72315,12.144464,medium,2003
+22,Göteborg Bandyklub,103,"850 Natalie Green Apt. 940, Göteborg",57.705931,11.999502,small,1994
+23,Göteborg Ishockeyklub,81,"655 Obrien Pass, Göteborg",57.737023,11.989775,small,1981
+24,Göteborg Ishockeyklub,534,"9340 Smith Valley, Göteborg",57.721034,11.948454,large,1964
+25,Mölndal Basketklub,427,"6159 Alvarado Crossing, Mölndal",57.651903,11.989024,large,1971
+26,Kungälv Basketklub,217,"465 Terry Plaza Apt. 366, Kungälv",57.916373,12.001836,medium,1989
+27,Kungälv Fotbollklub,743,"946 Kevin Fords, Kungälv",57.822568,11.961196,large,1998
+28,Mölndal Handbollklub,692,"957 Ramos Forest Suite 214, Mölndal",57.613,12.032461,large,1981
+29,Partille Fotbollklub,173,"34332 Brandon Mountains Apt. 769, Partille",57.774429,12.116541,medium,1955
+30,Kungälv Bandyklub,568,"676 Dylan Spurs, Kungälv",57.862838,11.967057,large,1993

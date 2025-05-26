@@ -1,0 +1,47 @@
+SponsorMatchAI/
+├── run_app.py
+├── diagnose_data_flow.py
+├── emergency_demo.py
+├── emergency_diagnostic.py
+├── fix_common_issues.py
+├── minimal_app.py
+├── prepare_all_data.py
+├── prepare_associations_data.py
+├── retrain_clustering.py
+├── tasks.py
+├── temp_ingest.py
+├── pyproject.toml
+├── tests/
+│   ├── test_clustering.py
+│   ├── test_service.py
+│   ├── test_fixes.py
+│   ├── test_recommendations.py
+│   ├── test_setup.py
+├── sponsor_match/
+│   ├── core/
+│   │   ├── config.py
+│   │   └── db.py
+│   ├── models/
+│   │   ├── entities.py
+│   │   └── features.py
+│   ├── ml/
+│   │   └── pipeline.py
+│   ├── services/
+│   │   ├── service.py
+│   │   └── simple_service.py
+│   ├── ui/
+│   │   ├── simple_app.py
+│   │   ├── components/
+│   │   │   └── map_view.py
+│   │   ├── services/
+│   │   │   └── data_service.py
+│   │   └── utils/
+│   │       └── sessions.py
+│   └── cli/
+│       └── db_init.py
+├── data/
+│   ├── associations_prepared.csv      *[expected prepared data file]*
+│   └── companies_prepared.csv        *[expected prepared data file]*
+└── models/
+    ├── kmeans.joblib                *[trained default model]*
+    └── kmeans_large.joblib          *[trained “large” bucket model]*

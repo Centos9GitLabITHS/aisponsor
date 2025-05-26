@@ -1,0 +1,72 @@
+{
+  "timestamp": "2025-05-14T18:29:48.158760",
+  "steps": [
+    {
+      "name": "Database Connection",
+      "timestamp": "2025-05-14T18:29:47.290579",
+      "success": false,
+      "error": "type object 'Config' has no attribute 'MYSQL_URL'"
+    },
+    {
+      "name": "Entity Loading",
+      "timestamp": "2025-05-14T18:29:47.472970",
+      "success": false,
+      "error": "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+    },
+    {
+      "name": "Service Layer",
+      "timestamp": "2025-05-14T18:29:47.531033",
+      "success": false,
+      "error": "SponsorMatchService.__init__() missing 2 required positional arguments: 'db_engine' and 'cluster_models'"
+    },
+    {
+      "name": "Distance Calculation",
+      "timestamp": "2025-05-14T18:29:47.531844",
+      "success": true,
+      "error": null
+    },
+    {
+      "name": "Search Functionality",
+      "timestamp": "2025-05-14T18:29:47.532722",
+      "success": false,
+      "error": "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+    },
+    {
+      "name": "UI Integration",
+      "timestamp": "2025-05-14T18:29:48.158534",
+      "success": true,
+      "error": null
+    }
+  ],
+  "errors": [
+    [
+      "Database Connection",
+      "type object 'Config' has no attribute 'MYSQL_URL'"
+    ],
+    [
+      "Entity Loading",
+      "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+    ],
+    [
+      "Service Layer",
+      "SponsorMatchService.__init__() missing 2 required positional arguments: 'db_engine' and 'cluster_models'"
+    ],
+    [
+      "Search Functionality",
+      "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+    ]
+  ],
+  "data_snapshots": {
+    "Distance Calculation": {
+      "distance": 1.2774467019526492
+    },
+    "UI Integration": {
+      "methods": [
+        "clubs_df",
+        "engine",
+        "render_main_page"
+      ],
+      "search_methods": []
+    }
+  }
+}
