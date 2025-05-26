@@ -273,8 +273,6 @@ def render_search_results():
         st.dataframe(sponsors[['rank', 'display_name', 'size_bucket', 'score', 'distance_km']])
     with tab3:
         fig = px.histogram(sponsors, x='score', nbins=10, title="Score Distribution")
-        st.plotly_chart(fig, use_container_width=True)
-
 
 if "page" not in st.session_state:
     st.session_state.page = "home"
