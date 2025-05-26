@@ -2,7 +2,7 @@
 # pylint: disable=unused-import, unused-variable, duplicate-code
 """
 sponsor_match/ui/simple_app.py
-FINAL VERSION - Streamlit UI for SponsorMatch AI.
+FINAL VERSION - Streamlit UI for Golden Goal.
 """
 
 import sys
@@ -23,7 +23,7 @@ from sponsor_match.core.db import get_engine
 
 # Page configuration
 st.set_page_config(
-    page_title="SponsorMatch AI",
+    page_title="Golden Goal",
     page_icon="🎯",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -84,7 +84,7 @@ def navigate_to(page: str):
 def render_navigation():
     col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
     with col1:
-        st.markdown("### 🎯 SponsorMatch AI")
+        st.markdown("### 🎯 Golden Goal")
     with col2:
         if st.button("🏠 Home", key="nav_home"):
             st.session_state.page = "home"
@@ -101,7 +101,7 @@ def render_navigation():
 
 # Home page rendering
 def render_home_page():
-    st.title("Welcome to SponsorMatch AI")
+    st.title("Welcome to Golden Goal")
     st.markdown("### Find sponsors for your club/association using AI-powered matching")
     st.markdown("""
 - 📍 **Geographic proximity**  
