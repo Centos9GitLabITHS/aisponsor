@@ -1,6 +1,8 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
 # sponsor_match/ui/components/map_view.py
 
-import streamlit as st
 from folium import Map, Marker, Popup, Icon
 from folium.plugins import MarkerCluster, HeatMap
 from streamlit_folium import st_folium

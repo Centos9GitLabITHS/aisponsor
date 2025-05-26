@@ -1,25 +1,21 @@
-#!/usr/bin/env python3
+# db_init.py
 """
-sponsor_match/db_init.py
-------------------------
-Create (if needed) the `associations` and `companies` tables in MySQL.
-
-Usage:
-    python -m sponsor_match.db_init
+Initialise MySQL tables `associations` and `companies` if they do not already exist.
 """
+import logging  # For informative logs
+from argparse import ArgumentParser  # CLI parsing
+from textwrap import dedent  # For multi-line SQL
 
-import logging
-from argparse import ArgumentParser
-from textwrap import dedent
-from sponsor_match.core.db import get_engine
+from sponsor_match.core.db import get_engine  # Database engine factory
 
-# Configure logging
+# Configure root logger
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
+# DDL statements to create required tables
 DDL = dedent("""
    CREATE TABLE IF NOT EXISTS associations (
         id             INT PRIMARY KEY AUTO_INCREMENT,
@@ -49,23 +45,22 @@ DDL = dedent("""
 
 def main(dry_run: bool = False) -> None:
     """
-    Execute the DDL statements to ensure tables exist.
-    If dry_run is True, only logs the statements without executing.
+    Execute the DDL statements. In dry-run mode, only logs the SQL without executing.
     """
     engine = get_engine()
     logger.info("Connecting to database")
     if dry_run:
-        logger.info("Dry run mode: the following statements would be executed:\n%s", DDL)
+        logger.info("Dry run mode:\n%s", DDL)
         return
 
     try:
+        # Execute each SQL statement in a transaction
         with engine.begin() as conn:
             for stmt in DDL.strip().split(";"):
                 stmt = stmt.strip()
-                if not stmt:
-                    continue
-                conn.exec_driver_sql(stmt)
-                logger.info("Executed DDL: %s", stmt.splitlines()[0])
+                if stmt:
+                    conn.exec_driver_sql(stmt)
+                    logger.info("Executed DDL: %s", stmt.splitlines()[0])
         logger.info("✅ Tables `associations` and `companies` are ready")
     except Exception as e:
         logger.exception("Database initialization failed: %s", e)
@@ -74,10 +69,6 @@ def main(dry_run: bool = False) -> None:
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="Initialize MySQL tables for SponsorMatch")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show DDL without executing"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="Show DDL without executing")
     args = parser.parse_args()
     main(dry_run=args.dry_run)

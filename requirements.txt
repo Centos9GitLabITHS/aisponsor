@@ -33,3 +33,6 @@ lightgbm~=4.6.0
 sponsor_match~=0.1.0
 Faker~=37.3.0
 fuzzywuzzy~=0.18.0
+sponsor_match~=0.1.0
+altair~=5.5.0
+plotly~=6.0.1

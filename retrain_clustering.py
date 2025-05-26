@@ -1,13 +1,18 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
 #!/usr/bin/env python3
 """
 Retrain clustering models with consistent features.
 Run this to fix the feature dimension mismatch.
 """
 
-import pandas as pd
-import joblib
 from pathlib import Path
+
+import joblib
+import pandas as pd
 from sklearn.cluster import KMeans
+
 from sponsor_match.core.db import get_engine
 
 

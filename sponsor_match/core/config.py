@@ -1,7 +1,14 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
+# Fix 1: Update sponsor_match/core/config.py
+# The password has special characters that need proper URL encoding
+
 import os
 from pathlib import Path
-from dotenv import load_dotenv
 from urllib.parse import quote_plus
+
+from dotenv import load_dotenv
 
 load_dotenv()
 

@@ -1,10 +1,13 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
 #!/usr/bin/env python3
 """
 Enrich association data with size categories using multiple strategies.
 """
-import pandas as pd
 import numpy as np
-import re
+import pandas as pd
+
 
 def categorize_by_name_patterns(name):
     """

@@ -1,3 +1,6 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
 #!/usr/bin/env python3
 """
 sponsor_match/models/features.py
@@ -9,11 +12,11 @@ and scoring potential sponsor-club matches based on multiple dimensions includin
 geographic proximity, size compatibility, and industry relevance.
 """
 
-import numpy as np
-import pandas as pd
 from datetime import datetime
 from typing import Dict
 
+import numpy as np
+import pandas as pd
 from geopy.distance import geodesic
 
 

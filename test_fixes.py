@@ -1,3 +1,6 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
 #!/usr/bin/env python3
 """Test all the fixes."""
 

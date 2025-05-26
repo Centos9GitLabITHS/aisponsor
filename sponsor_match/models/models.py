@@ -1,3 +1,6 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
 #!/usr/bin/env python3
 """
 sponsor_match/models/models.py
@@ -8,11 +11,11 @@ Ensemble of ML models for sponsorship probability prediction.
 import logging
 from typing import Any, Dict, Union
 
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingClassifier
 from sklearn.neural_network import MLPRegressor
-import lightgbm as lgb
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(

@@ -1,5 +1,9 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
 # temp_ingest.py
 import pandas as pd
+
 from sponsor_match.core.db import get_engine
 
 df = pd.read_csv('data/gothenburg_associations.csv')

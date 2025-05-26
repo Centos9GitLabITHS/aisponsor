@@ -8,26 +8,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f27783fc-e02d-4d39-ad27-aca1d5896aaa" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/diagnose_data_flow.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/data/geocode_with_municipality.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/data/ingest_associations_fixed.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sponsor_match/ui/utils/archive_migration.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_recommendations.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/setup_database.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/train_clustering_models.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/emergency-demo-script.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/prepare_all_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/run_app.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sponsor_match/services/simple_service.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sponsor_match/ui/simple_app.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/archive/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/data/examine.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/models/kmeans.joblib" beforeDir="false" afterPath="$PROJECT_DIR$/models/kmeans.joblib" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/models/kmeans_large.joblib" beforeDir="false" afterPath="$PROJECT_DIR$/models/kmeans_large.joblib" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/core/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/core/config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/data/ingest_associations.py" beforeDir="false" afterPath="$PROJECT_DIR$/archive/scripts/ingest_associations.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ml/pipeline.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ml/pipeline.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/models/clustering.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/models/clustering.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/models/entities.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/models/entities.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/services/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/services/service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sponsor_match/ui/pages/search.py" beforeDir="false" afterPath="$PROJECT_DIR$/sponsor_match/ui/pages/search.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_fixes.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_fixes.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/utils/list_project_files.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/list_project_files.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/utils_output/project_dump_part1.txt" beforeDir="false" afterPath="$PROJECT_DIR$/utils_output/project_dump_part1.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/utils_output/project_dump_part2.txt" beforeDir="false" afterPath="$PROJECT_DIR$/utils_output/project_dump_part2.txt" afterDir="false" />
@@ -73,26 +59,35 @@
     "Python.check_db.executor": "Run",
     "Python.create_simple_dump.executor": "Run",
     "Python.deep_analyze.executor": "Run",
+    "Python.examine.executor": "Run",
     "Python.geocode_companies.executor": "Run",
     "Python.list_project_files.executor": "Run",
+    "Python.run_app.executor": "Run",
     "Python.search_issue_debugger.executor": "Run",
+    "Python.simple_app.executor": "Run",
     "Python.streamlit_app.executor": "Run",
     "Python.tasks.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
     "SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "git-widget-placeholder": "future-advanced-app-setup",
-    "last_opened_file_path": "/home/bakri/PycharmProjects/SponsorMatchAI/sponsor_match/data",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "/home/bakri/PycharmProjects/SponsorMatchAI/sponsor_match/ui",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
+    "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/sponsor_match/ui" />
+      <recent name="$PROJECT_DIR$/sponsor_match/services" />
+      <recent name="$PROJECT_DIR$" />
       <recent name="$PROJECT_DIR$/sponsor_match/data" />
       <recent name="$PROJECT_DIR$/data" />
-      <recent name="$PROJECT_DIR$/sponsor_match/ui/utils" />
-      <recent name="$PROJECT_DIR$/sponsor_match/ui/services" />
-      <recent name="$PROJECT_DIR$/sponsor_match/ui" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/archive/old_csv_files" />
@@ -102,7 +97,7 @@
       <recent name="$PROJECT_DIR$/sponsor_match/models" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.list_project_files">
+  <component name="RunManager" selected="Python.examine">
     <configuration name="app" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="SponsorMatchAI" />
       <option name="ENV_FILES" value="" />
@@ -116,6 +111,7 @@
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/sponsor_match/ui/app.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
@@ -125,7 +121,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="geocode_gothenburg_companies" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="examine" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="SponsorMatchAI" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -134,11 +130,12 @@
         <env name="PYTHONUNBUFFERED" value="1" />
       </envs>
       <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/scripts" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/data" />
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/scripts/geocode_gothenburg_companies.py" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/data/examine.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -160,6 +157,7 @@
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/utils/list_project_files.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
@@ -169,29 +167,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="search_issue_debugger" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="SponsorMatchAI" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/debug" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/debug/search_issue_debugger.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="streamlit_app" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="run_app" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="SponsorMatchAI" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -204,7 +180,31 @@
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/streamlit_app.py" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/run_app.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="simple_app" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="SponsorMatchAI" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/sponsor_match/ui" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/sponsor_match/ui/simple_app.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -215,17 +215,18 @@
     </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.examine" />
+        <item itemvalue="Python.simple_app" />
         <item itemvalue="Python.list_project_files" />
+        <item itemvalue="Python.run_app" />
         <item itemvalue="Python.app" />
-        <item itemvalue="Python.streamlit_app" />
-        <item itemvalue="Python.search_issue_debugger" />
-        <item itemvalue="Python.geocode_gothenburg_companies" />
       </list>
     </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
+        <option value="bundled-js-predefined-d6986cc7102b-f27c65a3e318-JavaScript-PY-251.23774.444" />
         <option value="bundled-python-sdk-890ed5b35930-d9c5bdb153f4-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-251.23774.444" />
       </set>
     </attachedChunks>
@@ -237,7 +238,14 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1747147471857</updated>
+      <workItem from="1748183127723" duration="633000" />
     </task>
     <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/SponsorMatchAI$examine.coverage" NAME="examine Coverage Results" MODIFIED="1748183221679" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/data" />
   </component>
 </project>

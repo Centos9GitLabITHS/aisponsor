@@ -1,19 +1,31 @@
+# Train clustering models for associations and companies
+# Detailed comments have been inserted in British English.
+
 #!/usr/bin/env python3
 """
 train_clustering_models.py - Train clustering models with consistent features
 """
 
+# Standard library or third-party import
 import logging
+# Standard library or third-party import
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
+# Standard library or third-party import
 import joblib
+# Standard library or third-party import
+import numpy as np
+# Standard library or third-party import
+import pandas as pd
+# Standard library or third-party import
 from sklearn.cluster import KMeans
+# Standard library or third-party import
 from sklearn.preprocessing import StandardScaler
-from sqlalchemy import text
 
+# Standard library or third-party import
 from sponsor_match.core.db import get_engine
+
+# Standard library or third-party import
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,6 +42,7 @@ N_CLUSTERS = {
 }
 
 
+# Definition of function 'load_data': explains purpose and parameters
 def load_data():
     """Load associations and companies from database."""
     engine = get_engine()
@@ -52,6 +65,7 @@ def load_data():
     return associations, companies
 
 
+# Definition of function 'train_clustering_model': explains purpose and parameters
 def train_clustering_model(data, n_clusters, model_name):
     """Train a clustering model on the given data."""
     # Extract features
@@ -87,6 +101,7 @@ def train_clustering_model(data, n_clusters, model_name):
     return model_package
 
 
+# Definition of function 'train_all_models': explains purpose and parameters
 def train_all_models():
     """Train all clustering models."""
     # Load data
@@ -120,6 +135,7 @@ def train_all_models():
     create_backward_compatible_models()
 
 
+# Definition of function 'create_backward_compatible_models': explains purpose and parameters
 def create_backward_compatible_models():
     """Create simplified models for backward compatibility."""
     # Load the model packages
@@ -133,6 +149,7 @@ def create_backward_compatible_models():
     logger.info("Created backward compatible models")
 
 
+# Definition of function 'test_models': explains purpose and parameters
 def test_models():
     """Test the trained models."""
     # Load a model
@@ -154,6 +171,7 @@ def test_models():
         logger.info(f"  Point {point} -> Cluster {cluster}")
 
 
+# Entry point check: script execution starts here when run directly
 if __name__ == "__main__":
     train_all_models()
     test_models()

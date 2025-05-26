@@ -1,0 +1,131 @@
+├── .env
+├── .gitignore
+    ├── .idea/SponsorMatchAI.iml
+        ├── .idea/dictionaries/project.xml
+        ├── .idea/inspectionProfiles/Project_Default.xml
+        ├── .idea/inspectionProfiles/profiles_settings.xml
+    ├── .idea/misc.xml
+    ├── .idea/modules.xml
+    ├── .idea/vcs.xml
+    ├── .idea/workspace.xml
+    ├── .streamlit/secrets.toml
+├── .streamlitignore
+├── README.md
+        ├── archive/debug/__init__.py
+        ├── archive/debug/debug_report_20250514_182948.json
+        ├── archive/debug/discover_structure.py
+        ├── archive/debug/project_structure.json
+        ├── archive/debug/search_issue_debugger.py
+        ├── archive/old_csv_files/associations_goteborg.csv
+        ├── archive/old_csv_files/associations_goteborg_with_coords.csv
+        ├── archive/old_csv_files/bolag_1_500_sorted_with_year.csv
+        ├── archive/old_csv_files/bolag_1_500_with_coords.csv
+        ├── archive/old_csv_files/sample_associations.csv
+        ├── archive/old_csv_files/sample_companies.csv
+        ├── archive/scripts/__init__.py
+        ├── archive/scripts/build_associations_csv.py
+        ├── archive/scripts/filter_gothenburg.py
+        ├── archive/scripts/geocode_gothenburg_companies.py
+        ├── archive/scripts/ingest_associations.py
+    ├── assets/logo.png
+    ├── data/examine.py
+├── diagnose_data_flow.py
+├── emergency-demo-script.py
+    ├── models/kmeans.joblib
+    ├── models/kmeans_large.joblib
+    ├── models/kmeans_large_simple.joblib
+    ├── models/kmeans_simple.joblib
+├── poetry.lock
+├── prepare_all_data.py
+├── prepare_associations_data.py
+├── pyproject.toml
+├── requirements.txt
+├── retrain_clustering.py
+├── run_app.py
+    ├── sponsor_match.egg-info/PKG-INFO
+    ├── sponsor_match.egg-info/SOURCES.txt
+    ├── sponsor_match.egg-info/dependency_links.txt
+    ├── sponsor_match.egg-info/requires.txt
+    ├── sponsor_match.egg-info/top_level.txt
+    ├── sponsor_match/__init__.py
+        ├── sponsor_match/__pycache__/clustering.cpython-312.pyc
+        ├── sponsor_match/__pycache__/db.cpython-312.pyc
+        ├── sponsor_match/__pycache__/db.cpython-313.pyc
+        ├── sponsor_match/__pycache__/db_init.cpython-312.pyc
+        ├── sponsor_match/__pycache__/ingest_associations.cpython-312.pyc
+        ├── sponsor_match/__pycache__/ingest_associations.cpython-313.pyc
+        ├── sponsor_match/__pycache__/ingest_excel.cpython-312.pyc
+        ├── sponsor_match/__pycache__/ingest_excel.cpython-313.pyc
+        ├── sponsor_match/__pycache__/service.cpython-312.pyc
+        ├── sponsor_match/cli/__init__.py
+            ├── sponsor_match/cli/__pycache__/__init__.cpython-312.pyc
+        ├── sponsor_match/cli/db_init.py
+        ├── sponsor_match/cli/run_pipeline.py
+        ├── sponsor_match/cli/train_matcher.py
+            ├── sponsor_match/core/__pycache__/config.cpython-312.pyc
+            ├── sponsor_match/core/__pycache__/db.cpython-312.pyc
+        ├── sponsor_match/core/config.py
+        ├── sponsor_match/core/config.py.backup
+        ├── sponsor_match/core/db.py
+        ├── sponsor_match/core/logger.py
+        ├── sponsor_match/data/__init__.py
+            ├── sponsor_match/data/__pycache__/__init__.cpython-312.pyc
+        ├── sponsor_match/data/geocode_with_municipality.py
+        ├── sponsor_match/data/ingest_associations_fixed.py
+        ├── sponsor_match/data/ingest_companies.py
+        ├── sponsor_match/ml/pipeline.py
+        ├── sponsor_match/models/__init__.py
+            ├── sponsor_match/models/__pycache__/__init__.cpython-312.pyc
+            ├── sponsor_match/models/__pycache__/clustering.cpython-312.pyc
+            ├── sponsor_match/models/__pycache__/entities.cpython-312.pyc
+            ├── sponsor_match/models/__pycache__/features.cpython-312.pyc
+        ├── sponsor_match/models/club_extended.py
+        ├── sponsor_match/models/clustering.py
+        ├── sponsor_match/models/entities.py
+        ├── sponsor_match/models/features.py
+        ├── sponsor_match/models/models.py
+        ├── sponsor_match/services/__init__.py
+        ├── sponsor_match/services/service.py
+        ├── sponsor_match/services/simple_service.py
+        ├── sponsor_match/ui/__init__.py
+            ├── sponsor_match/ui/__pycache__/__init__.cpython-312.pyc
+        ├── sponsor_match/ui/app.py
+            ├── sponsor_match/ui/components/__init__.py
+            ├── sponsor_match/ui/components/cards.py
+            ├── sponsor_match/ui/components/map_view.py
+            ├── sponsor_match/ui/components/modals.py
+            ├── sponsor_match/ui/components/sidebar.py
+            ├── sponsor_match/ui/pages/__init__.py
+            ├── sponsor_match/ui/pages/home.py
+            ├── sponsor_match/ui/pages/profile.py
+            ├── sponsor_match/ui/pages/search.py
+            ├── sponsor_match/ui/services/__init__.py
+            ├── sponsor_match/ui/services/data_service.py
+            ├── sponsor_match/ui/services/search_services.py
+        ├── sponsor_match/ui/simple_app.py
+        ├── sponsor_match/ui/styles.py
+            ├── sponsor_match/ui/utils/__init__.py
+            ├── sponsor_match/ui/utils/archive_migration.py
+            ├── sponsor_match/ui/utils/sessions.py
+├── streamlit_app.py
+├── tasks.py
+├── temp_ingest.py
+├── test_fixes.py
+├── test_recommendations.py
+    ├── tests/__init__.py
+        ├── tests/__pycache__/__init__.cpython-312.pyc
+        ├── tests/__pycache__/conftest.cpython-312-pytest-8.3.5.pyc
+        ├── tests/__pycache__/test_automated_suite.cpython-312-pytest-8.3.5.pyc
+        ├── tests/__pycache__/test_feature_engineer.cpython-312-pytest-8.3.5.pyc
+    ├── tests/test_clustering.py
+    ├── tests/test_service.py
+    ├── utils/__init__.py
+    ├── utils/check_db.py
+    ├── utils/generate_sample_data.py
+    ├── utils/list_project_files.py
+    ├── utils/setup_database.py
+    ├── utils/train_clustering_models.py
+    ├── utils_output/project_dump_part1.txt
+    ├── utils_output/project_dump_part2.txt
+    ├── utils_output/project_dump_part3.txt
+    ├── utils_output/project_dump_part4.txt

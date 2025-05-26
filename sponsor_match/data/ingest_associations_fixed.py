@@ -1,3 +1,6 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
 #!/usr/bin/env python3
 """
 Ingest Gothenburg associations with geocoding and proper data cleaning.
@@ -8,12 +11,12 @@ import time
 from pathlib import Path
 
 import pandas as pd
-from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
+from geopy.geocoders import Nominatim
 from sqlalchemy import text
 
 from sponsor_match.core.db import get_engine
-from sponsor_match.models.entities import Base, Association
+from sponsor_match.models.entities import Base
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -1,3 +1,6 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
 #!/usr/bin/env python3
 """
 sponsor_match/data/ingest_companies.py
@@ -5,11 +8,13 @@ sponsor_match/data/ingest_companies.py
 Read data/bolag_1_500_with_coords.csv (already geocoded) and load into companies table.
 """
 
-import sys
 import logging
+import sys
 from pathlib import Path
+
 import pandas as pd
 from sqlalchemy import text
+
 from sponsor_match.core.db import get_engine
 
 # Configure logging

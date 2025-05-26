@@ -1,11 +1,19 @@
+# Tool to diagnose data flow issues in SponsorMatch AI
+# Detailed comments have been inserted in British English.
+
 #!/usr/bin/env python3
 """Diagnose the data flow issue."""
 
-from sponsor_match.core.db import get_engine
-from sponsor_match.ml.pipeline import score_and_rank
+# Standard library or third-party import
 import json
 
+# Standard library or third-party import
+from sponsor_match.core.db import get_engine
+# Standard library or third-party import
+from sponsor_match.ml.pipeline import score_and_rank
 
+
+# Definition of function 'diagnose': explains purpose and parameters
 def diagnose():
     # First check what associations exist
     engine = get_engine()
@@ -52,5 +60,6 @@ def diagnose():
             print(f"ID: {row[0]}, Name: {row[1]}")
 
 
+# Entry point check: script execution starts here when run directly
 if __name__ == "__main__":
     diagnose()

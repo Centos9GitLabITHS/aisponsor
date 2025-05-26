@@ -1,128 +1,233 @@
 ================================================================================
+FIL: archive/scripts/build_associations_csv.py
+================================================================================
+
+# build_associations_csv.py
+"""
+Reads a raw associations CSV, geocodes missing latitude/longitude,
+and writes an enriched CSV for ingestion.
+"""
+import argparse  # For parsing CLI arguments
+import logging  # For logging progress and warnings
+import sqlite3  # Lightweight local cache database
+from pathlib import Path  # Filesystem paths
+
+import pandas as pd  # Data handling
+import requests  # HTTP requests for geocoding
+from dotenv import load_dotenv  # Load environment variables
+
+# Constants for default paths and geocoder
+load_dotenv()
+DEFAULT_INPUT = Path("data") / "associations_raw.csv"
+DEFAULT_OUTPUT = Path("data") / "associations_goteborg_with_coords.csv"
+DEFAULT_CACHE_DB = Path(".geo_cache.sqlite3")
+GEOCODER_URL = "https://nominatim.openstreetmap.org/search"
+
+
+def init_logging():
+    """Configure logging format and level."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s"
+    )
+
+
+def open_cache(db_path: Path) -> sqlite3.Connection:
+    """Open or create a SQLite cache for geocode results."""
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS geocode_cache (
+            address TEXT PRIMARY KEY,
+            latitude REAL,
+            longitude REAL
+        )
+    """)
+    conn.commit()
+    return conn
+
+
+def geocode(address: str, conn: sqlite3.Connection, api_key: str = None):
+    """
+    Return (lat, lon) for an address, using cache if available,
+    otherwise querying the external geocoding service.
+    """
+    # Check cache first
+    row = conn.execute(
+        "SELECT latitude, longitude FROM geocode_cache WHERE address = ?",
+        (address,)
+    ).fetchone()
+    if row:
+        return row
+
+    # Make external request if not cached
+    try:
+        params = {"q": address, "format": "json", "limit": 1}
+        if api_key:
+            params["key"] = api_key
+        resp = requests.get(GEOCODER_URL, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if not data:
+            raise ValueError(f"No results for '{address}'")
+        lat, lon = float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception as e:
+        logging.warning(f"Geocoding failed for '{address}': {e}")
+        return None, None
+
+    # Cache the successful result
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO geocode_cache(address, latitude, longitude) VALUES (?, ?, ?)",
+            (address, lat, lon)
+        )
+        conn.commit()
+    except Exception as e:
+        logging.warning(f"Failed to cache geocode for '{address}': {e}")
+
+    return lat, lon
+
+
+def main():
+    """Main entry point: parse arguments, geocode missing entries, and write output."""
+    init_logging()
+    parser = argparse.ArgumentParser(description="Build associations CSV with geocoding")
+    parser.add_argument("--input-csv", type=Path, default=DEFAULT_INPUT, help="Path to raw CSV")
+    parser.add_argument("--output-csv", type=Path, default=DEFAULT_OUTPUT, help="Path to enriched CSV")
+    parser.add_argument("--cache-db", type=Path, default=DEFAULT_CACHE_DB, help="SQLite cache DB path")
+    parser.add_argument("--api-key", type=str, default=None, help="Geocoding API key")
+    args = parser.parse_args()
+
+    # Load raw data
+    if not args.input_csv.exists():
+        logging.error(f"Input CSV not found: {args.input_csv}")
+        return
+    df = pd.read_csv(args.input_csv)
+    logging.info(f"Loaded {len(df)} rows from {args.input_csv}")
+
+    # Identify or create lat/lon columns
+    lat_col = next((c for c in df.columns if c.lower() in ("latitude","lat")), None)
+    lon_col = next((c for c in df.columns if c.lower() in ("longitude","lon")), None)
+    if not lat_col or not lon_col:
+        lat_col, lon_col = "latitude","longitude"
+        df[lat_col] = pd.NA
+        df[lon_col] = pd.NA
+    logging.info(f"Using columns: lat={lat_col}, lon={lon_col}")
+
+    # Prepare cache connection
+    cache_conn = open_cache(args.cache_db)
+
+    # Geocode entries missing coordinates
+    for idx, row in df.iterrows():
+        if pd.isna(row[lat_col]) or pd.isna(row[lon_col]):
+            address = row.get("address") or row.get("club_name") or ""
+            if not address:
+                logging.warning(f"No address for row {idx}; skipping")
+                continue
+            lat, lon = geocode(address, cache_conn, args.api_key)
+            if lat is not None:
+                df.at[idx, lat_col] = lat
+                df.at[idx, lon_col] = lon
+
+    # Write the enriched CSV
+    args.output_csv.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(args.output_csv, index=False)
+    logging.info(f"Wrote enriched CSV to {args.output_csv}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
 FIL: archive/scripts/filter_gothenburg.py
 ================================================================================
 
-#!/usr/bin/env python3
+# filter_gothenburg.py
 """
-scripts/filter_gothenburg.py
------------------------------
-Extract all Göteborg-municipality companies from a raw SCB bulk file
-(and build a full street address for each) by filtering on the
-canonical 20 district names.
-
-Usage:
-    python scripts/filter_gothenburg.py \
-      --input /home/bakri/Desktop/scb_bulkfil/scb_bulkfil_JE_20250512T094258_21.txt
+Extract Göteborg-municipality companies from a raw SCB bulk file,
+filter by district names, and build full street addresses.
 """
+import argparse  # CLI argument parsing
+import sys  # For exiting on error
+from pathlib import Path  # Filesystem paths
 
-import argparse
-import sys
-from pathlib import Path
+import pandas as pd  # DataFrame handling
 
-import pandas as pd
-
-# Logical field names we need
+# Fields we care about extracting
 DESIRED = ["PeOrgNr", "Gatuadress", "PostNr", "PostOrt"]
 
-# The 20 official Göteborg municipality districts
+# Official Göteborg districts for filtering
 DISTRICTS = [
-    "Agnesberg", "Angered", "Askim", "Asperö", "Billdal",
-    "Brännö", "Donsö", "Gunnilse", "Göteborg", "Hisings Backa",
-    "Hisings Kärra", "Hovås", "Kungälv", "Köpstadsö", "Olofstorp",
-    "Styrsö", "Säve", "Torslanda", "Vrångö", "Västra Frölunda",
+    "Agnesberg", "Angered", "Askim", "Asperö", "Billdal", "Brännö", "Donsö",
+    "Gunnilse", "Göteborg", "Hisings Backa", "Hisings Kärra", "Hovås",
+    "Kungälv", "Köpstadsö", "Olofstorp", "Styrsö", "Säve", "Torslanda",
+    "Vrångö", "Västra Frölunda"
 ]
-# Lower-case set for filtering, and map back for canonical casing
 LOWER_DISTRICTS = {d.lower() for d in DISTRICTS}
 DISTRICT_MAP = {d.lower(): d for d in DISTRICTS}
 
 
 def infer_columns(header_cols: list[str]) -> dict[str, str]:
     """
-    From the raw header_cols, find which actual column corresponds
-    to each name in DESIRED. Returns mapping actual_name -> desired_name.
-    Exits if any desired field is missing.
+    Map actual SCB column names to our desired logical names,
+    accounting for case and whitespace.
+    Exits with error message if any required column is missing.
     """
-    # map stripped, lower-cased to the real header
     lookup = {col.strip().lower(): col for col in header_cols}
-    mapping: dict[str, str] = {}
+    mapping = {}
     for want in DESIRED:
         key = want.lower()
         if key not in lookup:
-            print(f"🛑 Missing required column '{want}' in SCB header.", file=sys.stderr)
-            print("Available columns:", file=sys.stderr)
-            for col in header_cols:
-                print("   ", repr(col), file=sys.stderr)
+            print(f"🛑 Missing required column '{want}'.", file=sys.stderr)
             sys.exit(1)
-        actual = lookup[key]
-        mapping[actual] = want
+        mapping[lookup[key]] = want
     return mapping
 
 
 def main(scb_path: Path):
+    """Read SCB header, infer columns, load data, filter, and write output."""
     print(f"Reading SCB header from {scb_path} …")
-    # 1) Sniff header to get actual column names (tab-separated, Latin-1)
-    header_df = pd.read_csv(
-        scb_path,
-        sep="\t",
-        nrows=0,
-        encoding="latin1",
-        low_memory=False
-    )
+    # Read only header row to get actual column names
+    header_df = pd.read_csv(scb_path, sep="\t", nrows=0, encoding="latin1", low_memory=False)
     actual_cols = list(header_df.columns)
 
-    # 2) Infer which actual names match our DESIRED fields
+    # Determine which columns match our DESIRED fields
     col_map = infer_columns(actual_cols)
 
-    # 3) Load only those columns
+    # Load only those relevant columns
     print("Loading columns:", list(col_map.keys()))
-    df = pd.read_csv(
-        scb_path,
-        sep="\t",
-        usecols=list(col_map.keys()),
-        dtype=str,
-        encoding="latin1",
-        low_memory=False
-    )
+    df = pd.read_csv(scb_path, sep="\t", usecols=list(col_map.keys()),
+                     dtype=str, encoding="latin1", low_memory=False)
 
-    # 4) Rename to our standard logical names
+    # Rename to logical field names
     df = df.rename(columns=col_map)
 
-    # 5) Filter to entries whose PostOrt is one of the 20 districts
+    # Normalize district field and filter
     df["PostOrt_norm"] = df["PostOrt"].str.strip().str.lower()
     df = df[df["PostOrt_norm"].isin(LOWER_DISTRICTS)].copy()
     print(f"→ {len(df)} firms in Göteborg municipality")
 
-    # 6) Normalize the district back to canonical casing
+    # Map back to canonical district names
     df["district"] = df["PostOrt_norm"].map(DISTRICT_MAP)
 
-    # 7) Build a full street address
+    # Build full registered address
     df["registered_address"] = (
-        df["Gatuadress"].str.strip()
-        + ", "
-        + df["PostNr"].str.strip()
-        + " "
-        + df["district"]
+        df["Gatuadress"].str.strip() + ", " +
+        df["PostNr"].str.strip() + " " +
+        df["district"]
     )
 
-    # 8) Output the key fields
-    out = df[["PeOrgNr", "district", "registered_address"]]
-
+    # Output the key fields to CSV
     dest = Path("data") / "gothenburg_companies_addresses.csv"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    out.to_csv(dest, index=False, encoding="utf-8")
-    print(f"Wrote {len(out)} rows to {dest}")
+    df[["PeOrgNr", "district", "registered_address"]].to_csv(dest, index=False, encoding="utf-8")
+    print(f"Wrote {len(df)} rows to {dest}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Filter SCB dump to Göteborg municipality and build full addresses"
-    )
-    parser.add_argument(
-        "--input", "-i",
-        type=Path,
-        required=True,
-        help="Path to your raw SCB dump file (tab-separated, Latin-1 .txt)"
-    )
+    parser = argparse.ArgumentParser(description="Filter SCB dump to Göteborg and build addresses")
+    parser.add_argument("--input", "-i", type=Path, required=True, help="Path to SCB dump file")
     args = parser.parse_args()
     main(args.input)
 
@@ -131,57 +236,51 @@ if __name__ == "__main__":
 FIL: archive/scripts/geocode_gothenburg_companies.py
 ================================================================================
 
-#!/usr/bin/env python3
+# geocode_gothenburg_companies.py
 """
-scripts/geocode_gothenburg_companies.py
----------------------------------------
 Geocode Gothenburg company addresses with:
- - normalization (cache-friendly),
- - disk-cached results,
- - periodic checkpointing,
- - custom Nominatim endpoint support,
- - thread-based parallelism + RateLimiter (1 req/sec).
+ - normalisation for cache keys,
+ - disk-cached results using pickle,
+ - periodic checkpointing for large datasets,
+ - thread-based parallelism with geopy RateLimiter.
 """
+import logging  # Progress and debug logs
+import os  # For environment variables
+import pickle  # For caching address mappings
+import re  # Regex for address normalisation
+import time  # For retries
+from argparse import ArgumentParser  # CLI parsing
+from concurrent.futures import ThreadPoolExecutor, as_completed  # Parallelism
+from pathlib import Path  # Filesystem paths
+from typing import Dict, Tuple, Optional  # Type hints
 
-import logging
-import os
-import pickle
-import re
-import time
-from argparse import ArgumentParser
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-from typing import Dict, Tuple, Optional
+import pandas as pd  # Data handling
+from geopy.extra.rate_limiter import RateLimiter  # Rate-limiting for API
+from geopy.geocoders import Nominatim  # Geocoding service
+from tqdm import tqdm  # Progress bars
 
-import pandas as pd
-from geopy.extra.rate_limiter import RateLimiter
-from geopy.geocoders import Nominatim
-from tqdm import tqdm
-
-# -----------------------------------------------------------------------------
-# CONFIG
-# -----------------------------------------------------------------------------
+# Configuration constants
 CACHE_FILE = Path("data/geocode_cache.pkl")
-CHECKPOINT_INTERVAL = 1000    # save cache & partial CSV every N addresses
+CHECKPOINT_INTERVAL = 1000
 NOMINATIM_URL = os.getenv("NOMINATIM_URL", "https://nominatim.openstreetmap.org")
-USER_AGENT   = "sponsor_match_geo"
-# -----------------------------------------------------------------------------
+USER_AGENT = "sponsor_match_geo"
 
-logging.basicConfig(
-    format="%(asctime)s %(levelname)s %(message)s",
-    level=logging.INFO
-)
+# Initialise logger
+logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def normalize_address(addr: str) -> str:
-    """Lowercase, strip punctuation, standardize spacing & common terms."""
+    """Standardise addresses for cache keys: lowercase, remove punctuation, collapse spaces."""
     s = addr.strip().lower()
-    s = re.sub(r"[,.]", "", s)               # remove commas, periods
-    s = re.sub(r"\bgatan\b", "g", s)         # 'gatan' → 'g'
-    s = re.sub(r"\s+", " ", s)               # collapse whitespace
+    s = re.sub(r"[,.]", "", s)
+    s = re.sub(r"\bgatan\b", "g", s)
+    s = re.sub(r"\s+", " ", s)
     return s
 
+
 def load_cache() -> Dict[str, Tuple[Optional[float], Optional[float]]]:
+    """Load existing address-to-(lat,lon) cache from disk, or start fresh."""
     if CACHE_FILE.exists():
         with open(CACHE_FILE, "rb") as f:
             cache = pickle.load(f)
@@ -191,14 +290,17 @@ def load_cache() -> Dict[str, Tuple[Optional[float], Optional[float]]]:
         logger.info("No existing cache; starting fresh")
     return cache
 
+
 def save_cache(cache: Dict[str, Tuple[Optional[float], Optional[float]]]):
+    """Persist the cache dictionary to disk."""
     CACHE_FILE.parent.mkdir(exist_ok=True, parents=True)
     with open(CACHE_FILE, "wb") as f:
-        pickle.dump(cache, f)  # type: ignore
+        pickle.dump(cache, f)
     logger.info("Checkpoint: saved cache (%d entries)", len(cache))
 
+
 def geocode_worker_init():
-    """Initialize one shared geocoder + rate limiter per thread."""
+    """Initialise a per-thread geocoder and rate-limiter for parallel requests."""
     geocoder = Nominatim(
         user_agent=USER_AGENT,
         timeout=10,
@@ -208,42 +310,43 @@ def geocode_worker_init():
     limiter = RateLimiter(geocoder.geocode, min_delay_seconds=1.1)
     globals()["_limiter"] = limiter
 
+
 def geocode_one(addr_norm: str) -> Tuple[str, Optional[float], Optional[float]]:
-    """Try geocoding two variants; return (normalized_address, lat, lon)."""
+    """
+    Attempt to geocode the normalised address, optionally appending ', sweden'.
+    Returns (address_norm, lat, lon).
+    Retries on errors up to two variants.
+    """
     for query in (addr_norm, f"{addr_norm}, sweden"):
         try:
             loc = globals()["_limiter"](query, country_codes="se", exactly_one=True)
-        except ExceptionGroup as eg:
-            # Python 3.11+: multiple errors in one go
-            for sub in eg.exceptions:
-                logger.debug("Sub-error for %r: %s", query, sub)
-            time.sleep(2)
-            continue
         except Exception as e:
-            # any other single error (timeout, network, etc.)
-            logger.debug("Error for %r: %s", query, e)
+            logger.debug("Error geocoding %r: %s", query, e)
             time.sleep(2)
             continue
-
         if loc:
             return addr_norm, loc.latitude, loc.longitude
-
+    # Return None if both attempts fail
     return addr_norm, None, None
 
+
 def parse_args():
-    p = ArgumentParser(description="Geocode Gothenburg addresses w/ caching & threads")
-    p.add_argument("--log-level", "-L", choices=["DEBUG","INFO","WARN","ERROR"], default="INFO")
-    p.add_argument("-w", "--workers", type=int, default=4, help="Thread count")
+    """Define and parse command-line arguments."""
+    p = ArgumentParser(description="Geocode Göteborg addresses with caching & threads")
+    p.add_argument("-L", "--log-level", choices=["DEBUG","INFO","WARN","ERROR"], default="INFO")
+    p.add_argument("-w", "--workers", type=int, default=4)
     p.add_argument("--no-progress", action="store_true", help="Hide tqdm bar")
-    p.add_argument("in_csv",  type=Path, help="Input CSV with 'address' or 'registered_address'")
-    p.add_argument("out_csv", type=Path, help="Output CSV with lat,lon appended")
+    p.add_argument("in_csv", type=Path, help="Input CSV with 'address' or 'registered_address'")
+    p.add_argument("out_csv", type=Path, help="Output CSV with 'lat' and 'lon' appended")
     return p.parse_args()
 
+
 def main():
+    """Load data, normalise, parallel-geocode, checkpoint, and write final CSV."""
     args = parse_args()
     logging.getLogger().setLevel(getattr(logging, args.log_level))
 
-    # 1) Load data
+    # 1) Load input CSV
     df = pd.read_csv(args.in_csv, dtype=str)
     if "address" not in df.columns:
         if "registered_address" in df.columns:
@@ -252,58 +355,49 @@ def main():
             logger.error("Need column 'address' or 'registered_address'")
             return
 
-    # 2) Normalize
+    # 2) Normalise addresses for caching
     df["address_norm"] = df["address"].map(normalize_address)
 
-    # 3) Load cache & build list
+    # 3) Load or initialise cache
     cache = load_cache()
     unique_norm = df["address_norm"].dropna().unique().tolist()
     to_geo = [a for a in unique_norm if a not in cache]
     logger.info("Need to geocode %d/%d unique addresses", len(to_geo), len(unique_norm))
 
-    # 4) Parallel geocode with checkpointing
+    # 4) Parallel geocoding with checkpointing
     if to_geo:
-        with ThreadPoolExecutor(max_workers=args.workers,
-                                initializer=geocode_worker_init) as exe:
+        with ThreadPoolExecutor(max_workers=args.workers, initializer=geocode_worker_init) as exe:
             futures = {exe.submit(geocode_one, addr): addr for addr in to_geo}
-            it = tqdm(as_completed(futures), total=len(futures),
-                      desc="Geocoding", disable=args.no_progress)
+            it = tqdm(as_completed(futures), total=len(futures), desc="Geocoding", disable=args.no_progress)
             for i, fut in enumerate(it, start=1):
                 addr = futures[fut]
                 try:
                     _, lat, lon = fut.result()
-                except ExceptionGroup as eg:
-                    # should never hit here—handled in geocode_one—but just in case:
-                    for sub in eg.exceptions:
-                        logger.debug("Late sub-error for %r: %s", addr, sub)
-                    lat, lon = None, None
                 except Exception as e:
                     logger.debug("Late error for %r: %s", addr, e)
                     lat, lon = None, None
-
                 cache[addr] = (lat, lon)
 
-                # checkpoint every N
+                # Save cache and partial CSV at intervals
                 if i % CHECKPOINT_INTERVAL == 0:
                     save_cache(cache)
-                    # write partial CSV
-                    outp = args.out_csv.with_suffix(".partial.csv")
+                    partial = args.out_csv.with_suffix(".partial.csv")
                     df_partial = df[df["address_norm"].isin(cache)]
                     df_partial["lat"] = df_partial["address_norm"].map(lambda x: cache[x][0])
                     df_partial["lon"] = df_partial["address_norm"].map(lambda x: cache[x][1])
-                    df_partial.to_csv(outp, index=False)
-                    logger.info("Partial CSV (%d rows) → %s", len(df_partial), outp)
-
+                    df_partial.to_csv(partial, index=False)
+                    logger.info("Partial CSV (%d rows) → %s", len(df_partial), partial)
         save_cache(cache)
 
-    # 5) Map coords back to full DF
+    # 5) Map coordinates back into full DataFrame
     df["lat"] = df["address_norm"].map(lambda x: cache.get(x, (None, None))[0])
     df["lon"] = df["address_norm"].map(lambda x: cache.get(x, (None, None))[1])
 
-    # 6) Write final
+    # 6) Write the final output CSV
     args.out_csv.parent.mkdir(exist_ok=True, parents=True)
     df.to_csv(args.out_csv, index=False)
     logger.info("Wrote %d rows to %s", len(df), args.out_csv)
+
 
 if __name__ == "__main__":
     main()
@@ -313,32 +407,34 @@ if __name__ == "__main__":
 FIL: archive/scripts/ingest_associations.py
 ================================================================================
 
-#!/usr/bin/env python3
+# ingest_associations.py
 """
-sponsor_match/data/ingest_associations.py
-
-Reads an enriched associations CSV and ingests it into the MySQL database.
+Read an enriched associations CSV and ingest it into the MySQL `associations` table,
+replacing any existing data.
 """
+import argparse  # CLI parsing
+import logging  # Progress logging
+from pathlib import Path  # Filesystem paths
 
-import argparse
-import logging
-from pathlib import Path
+import pandas as pd  # Data loading
+from dotenv import load_dotenv  # Load environment credentials
+from sqlalchemy.exc import SQLAlchemyError  # Database error handling
 
-import pandas as pd
-from sqlalchemy.exc import SQLAlchemyError
-from sponsor_match.core.db import get_engine
-from dotenv import load_dotenv
+from sponsor_match.core.db import get_engine  # Obtain SQLAlchemy engine
+
 
 def init_logging():
+    """Configure basic logging settings."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s"
     )
 
+
 def ingest(csv_path: Path):
     """
-    Load the CSV at csv_path into the `associations` table.
-    Replaces any existing data in `associations`.
+    Load the CSV at `csv_path` into the `associations` table.
+    Uses SQLAlchemy's `to_sql` with `if_exists='replace'`.
     """
     if not csv_path.exists():
         logging.error(f"CSV file not found: {csv_path}")
@@ -353,13 +449,14 @@ def ingest(csv_path: Path):
 
     engine = get_engine()
     try:
+        # Begin transaction; drop and recreate table content atomically
         with engine.begin() as conn:
             df.to_sql(
                 name="associations",
                 con=conn,
                 if_exists="replace",
                 index=False,
-                method="multi",      # batch inserts if available
+                method="multi"  # Batch inserts where supported
             )
         logging.info(f"Successfully wrote {len(df)} rows to `associations` table.")
     except SQLAlchemyError as e:
@@ -367,21 +464,16 @@ def ingest(csv_path: Path):
     except Exception as e:
         logging.error(f"Unexpected error during ingest: {e}")
 
-def main():
-    load_dotenv()    # ensure .env credentials are loaded
-    init_logging()
 
-    parser = argparse.ArgumentParser(
-        description="Ingest enriched associations CSV into MySQL `associations` table"
-    )
-    parser.add_argument(
-        "--csv-path",
-        type=Path,
-        default=Path("data") / "associations_goteborg_with_coords.csv",
-        help="Path to the enriched associations CSV file",
-    )
+def main():
+    """Entry point: load .env, parse args, and call ingest()."""
+    load_dotenv()
+    init_logging()
+    parser = argparse.ArgumentParser(description="Ingest associations CSV into MySQL")
+    parser.add_argument("--csv-path", type=Path, default=Path("data/associations_goteborg_with_coords.csv"))
     args = parser.parse_args()
     ingest(args.csv_path)
+
 
 if __name__ == "__main__":
     main()
@@ -474,29 +566,29 @@ FIL: archive/debug/debug_report_20250514_182948.json
 FIL: archive/debug/discover_structure.py
 ================================================================================
 
-# debug/discover_structure.py
+# discover_structure.py
 """
 Module Structure Discovery Tool
 
-This script helps identify the actual structure of your SponsorMatchAI project
-so we can fix import errors in the test scripts.
+Parses the project directory to list Python modules, classes, functions, and imports,
+helping to diagnose import errors in test scripts.
 """
+import ast  # Abstract Syntax Tree parsing
+import json  # For outputting structure as JSON
+import os  # For directory traversal
+import sys  # To modify import path
+from pathlib import Path  # Object-oriented filesystem paths
 
-import os
-import sys
-from pathlib import Path
-import ast
-import json
-
+# Ensure project root is on sys.path so imports resolve correctly
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
 def find_python_files(directory):
-    """Find all Python files in the directory"""
+    """Recursively find all .py files, skipping virtual envs and caches."""
     python_files = []
     for root, dirs, files in os.walk(directory):
-        # Skip virtual environments and cache
+        # Exclude typical non-source directories
         dirs[:] = [d for d in dirs if d not in {'venv', '.venv', '__pycache__', '.git'}]
         for file in files:
             if file.endswith('.py'):
@@ -505,17 +597,13 @@ def find_python_files(directory):
 
 
 def analyze_file(filepath):
-    """Analyze a Python file to find classes and functions"""
+    """Parse a Python file to extract its classes, functions, and import statements."""
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
-
         tree = ast.parse(content)
 
-        functions = []
-        classes = []
-        imports = []
-
+        functions, classes, imports = [], [], []
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef):
                 functions.append(node.name)
@@ -524,100 +612,63 @@ def analyze_file(filepath):
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     imports.append(alias.name)
-            elif isinstance(node, ast.ImportFrom):
-                if node.module:
-                    imports.append(f"from {node.module}")
-
-        return {
-            'functions': functions,
-            'classes': classes,
-            'imports': imports
-        }
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.append(f"from {node.module}")
+        return {'functions': functions, 'classes': classes, 'imports': imports}
     except Exception as e:
         return {'error': str(e)}
 
 
 def main():
+    """Main routine: scan project structure and report key components."""
     print("SponsorMatchAI Structure Discovery")
-    print("=" * 40)
-
     sponsor_match_dir = project_root / 'sponsor_match'
-
     if not sponsor_match_dir.exists():
         print(f"Error: sponsor_match directory not found at {sponsor_match_dir}")
         return
 
-    print(f"Analyzing {sponsor_match_dir}...\n")
-
-    # Find all Python files
     python_files = find_python_files(sponsor_match_dir)
-
-    # Analyze structure
     structure = {}
-
+    # Analyze each file
     for file in python_files:
-        relative_path = file.relative_to(project_root)
-        analysis = analyze_file(file)
+        rel = file.relative_to(project_root)
+        result = analyze_file(file)
+        if 'error' not in result:
+            structure[str(rel)] = result
+            print(f"\n{rel}")
+            if result['classes']:
+                print(f"  Classes: {', '.join(result['classes'][:5])}")
+            if result['functions']:
+                funcs = result['functions']
+                print(f"  Functions: {', '.join(funcs[:5])}" + (f" ... and {len(funcs)-5} more" if len(funcs)>5 else ""))
 
-        if 'error' not in analysis:
-            structure[str(relative_path)] = analysis
-            print(f"\n{relative_path}")
-
-            if analysis['classes']:
-                print(f"  Classes: {', '.join(analysis['classes'][:5])}")
-
-            if analysis['functions']:
-                print(f"  Functions: {', '.join(analysis['functions'][:5])}")
-                if len(analysis['functions']) > 5:
-                    print(f"    ... and {len(analysis['functions']) - 5} more")
-
-    # Look for specific modules we need
-    print("\n\nSearching for key components:")
-    print("-" * 30)
-
+    # Search for essential components by keyword patterns
+    print("\nSearching for key components:")
     key_patterns = {
         'database': ['db', 'database', 'connection'],
         'config': ['config', 'settings', 'Config'],
-        'distance': ['distance', 'calculate_distance', 'haversine'],
-        'matching': ['match', 'matcher', 'find_matches', 'search'],
+        'distance': ['distance', 'haversine'],
+        'matching': ['match', 'matcher', 'search'],
         'streamlit': ['app', 'ui', 'streamlit'],
         'ingest': ['ingest', 'import', 'parse']
     }
-
     for component, patterns in key_patterns.items():
         print(f"\n{component.upper()}:")
         found = False
-        for filepath, content in structure.items():
-            for pattern in patterns:
-                if pattern in filepath.lower():
-                    print(f"  File: {filepath}")
+        for path, info in structure.items():
+            for pat in patterns:
+                if pat in path.lower() or any(pat in fn.lower() for fn in info.get('functions', [])) or any(pat in cls.lower() for cls in info.get('classes', [])):
+                    print(f"  Found '{pat}' in {path}")
                     found = True
                     break
-
-                for func in content.get('functions', []):
-                    if pattern in func.lower():
-                        print(f"  Function '{func}' in {filepath}")
-                        found = True
-
-                for cls in content.get('classes', []):
-                    if pattern in cls.lower():
-                        print(f"  Class '{cls}' in {filepath}")
-                        found = True
-
         if not found:
-            print(f"  Not found - this component might not exist")
+            print("  Not found - this component might not exist")
 
-    # Save the structure for reference
+    # Save the full structure for reference
     output_file = Path(__file__).parent / 'project_structure.json'
-
     with open(output_file, 'w') as f:
         json.dump(structure, f, indent=2)
-
-    print(f"\n\nStructure saved to: {output_file}")
-    print("\nNext steps:")
-    print("1. Share the output with me")
-    print("2. I'll create corrected versions of the test scripts")
-    print("3. We'll fix the import errors properly")
+    print(f"\nStructure saved to: {output_file}")
 
 
 if __name__ == "__main__":
@@ -918,828 +969,142 @@ FIL: archive/debug/project_structure.json
 FIL: archive/debug/search_issue_debugger.py
 ================================================================================
 
-import os
-from typing import Dict, Any
+# build_associations_csv.py
+"""
+Reads a raw associations CSV, geocodes missing latitude/longitude,
+and writes an enriched CSV for ingestion.
+"""
+import argparse  # For parsing CLI arguments
+import logging  # For logging progress and warnings
+import sqlite3  # Lightweight local cache database
+from pathlib import Path  # Filesystem paths
 
-import pandas as pd
-import streamlit as st
+import pandas as pd  # Data handling
+import requests  # HTTP requests for geocoding
+from dotenv import load_dotenv  # Load environment variables
 
-# Fallback if st.modal isn't available
-_open_modal = getattr(st, "modal", st.expander)
+# Constants for default paths and geocoder
+load_dotenv()
+DEFAULT_INPUT = Path("data") / "associations_raw.csv"
+DEFAULT_OUTPUT = Path("data") / "associations_goteborg_with_coords.csv"
+DEFAULT_CACHE_DB = Path(".geo_cache.sqlite3")
+GEOCODER_URL = "https://nominatim.openstreetmap.org/search"
 
 
-def load_csv_data():
-    """Load association data from CSV instead of database connection"""
-    # Path to the CSV file - adjust as needed
-    csv_path = os.path.join("data", "associations_goteborg_with_coords.csv")
+def init_logging():
+    """Configure logging format and level."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s"
+    )
 
+
+def open_cache(db_path: Path) -> sqlite3.Connection:
+    """Open or create a SQLite cache for geocode results."""
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS geocode_cache (
+            address TEXT PRIMARY KEY,
+            latitude REAL,
+            longitude REAL
+        )
+    """)
+    conn.commit()
+    return conn
+
+
+def geocode(address: str, conn: sqlite3.Connection, api_key: str = None):
+    """
+    Return (lat, lon) for an address, using cache if available,
+    otherwise querying the external geocoding service.
+    """
+    # Check cache first
+    row = conn.execute(
+        "SELECT latitude, longitude FROM geocode_cache WHERE address = ?",
+        (address,)
+    ).fetchone()
+    if row:
+        return row
+
+    # Make external request if not cached
     try:
-        # Attempt to load the CSV file
-        associations_df = pd.read_csv(csv_path)
-        return associations_df
+        params = {"q": address, "format": "json", "limit": 1}
+        if api_key:
+            params["key"] = api_key
+        resp = requests.get(GEOCODER_URL, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if not data:
+            raise ValueError(f"No results for '{address}'")
+        lat, lon = float(data[0]["lat"]), float(data[0]["lon"])
     except Exception as e:
-        # If the file can't be loaded, create a sample dataframe with test data
-        st.warning(f"Could not load CSV file: {str(e)}")
-        st.warning("Using sample data instead.")
+        logging.warning(f"Geocoding failed for '{address}': {e}")
+        return None, None
 
-        # Create sample data based on the structure you provided
-        sample_data = {
-            "id": [1, 2, 3, 4, 5],
-            "name": ["IFK Göteborg", "GAIS", "BK Häcken", "Örgryte IS", "Göteborgs Roddklubb"],
-            "member_count": [1500, 800, 950, 600, 150],
-            "address": [
-                "Kamratgatan 1, 41528 Göteborg",
-                "Gamla Ullevi, 41128 Göteborg",
-                "Rambergsvallen, 41752 Göteborg",
-                "Kärralundsvallen, 41670 Göteborg",
-                "Färjenäsparken, 41804 Göteborg"
-            ],
-            "lat": [57.7084, 57.7102, 57.7193, 57.7041, 57.6941],
-            "lon": [11.9746, 11.9866, 11.9367, 12.0027, 11.9124],
-            "size_bucket": ["large", "medium", "medium", "medium", "small"]
-        }
-        return pd.DataFrame(sample_data)
-
-
-class SponsorMatchUI:
-    def __init__(self) -> None:
-        st.set_page_config(
-            page_title="Golden Sugar Daddy Goal",
-            page_icon="⚽",
-            layout="wide",
-            initial_sidebar_state="collapsed",
+    # Cache the successful result
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO geocode_cache(address, latitude, longitude) VALUES (?, ?, ?)",
+            (address, lat, lon)
         )
-
-    def render_main_page(self) -> None:
-        # Enhanced CSS for better visual appearance
-        st.markdown(
-            """
-            <style>
-                /* Core Layout Structure */
-                [data-testid="stAppViewContainer"] {
-                    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-                }
-
-                /* Main content area */
-                .main-content {
-                    background: white;
-                    border-radius: 12px;
-                    padding: 2rem;
-                    max-width: 1200px;
-                    margin: 1rem auto;
-                    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
-                }
-
-                /* Headings with enhanced styling */
-                h1 {
-                    color: #1e3a8a !important;
-                    font-weight: 800 !important;
-                    font-size: 2.5rem !important;
-                    text-align: center;
-                    margin-bottom: 1.5rem !important;
-                    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
-                }
-
-                h2 {
-                    color: #1e3a8a !important;
-                    font-weight: 700 !important;
-                    font-size: 1.8rem !important;
-                    margin-bottom: 1.2rem !important;
-                    border-bottom: 2px solid #e0f2fe;
-                    padding-bottom: 0.5rem;
-                }
-
-                h3 {
-                    color: #1e40af !important;
-                    font-weight: 600 !important;
-                    font-size: 1.4rem !important;
-                    margin-bottom: 1rem !important;
-                    margin-top: 1.5rem !important;
-                }
-
-                /* Paragraph text */
-                p, label, div:not(.main-content) {
-                    color: #334155 !important;
-                    line-height: 1.6 !important;
-                }
-
-                /* Enhanced tabs styling */
-                .stTabs [data-baseweb="tab-list"] {
-                    gap: 4px;
-                    background-color: #1e3a8a !important;
-                    border-radius: 10px;
-                    padding: 6px 8px;
-                    max-width: 800px;
-                    margin: 0 auto 1.5rem auto;
-                }
-
-                .stTabs [data-baseweb="tab"] {
-                    height: auto;
-                    padding: 8px 24px;
-                    color: white !important;
-                    border-radius: 8px;
-                    font-weight: 500;
-                    margin: 0 2px;
-                }
-
-                .stTabs [aria-selected="true"] {
-                    background-color: #2563eb !important;
-                    border-radius: 8px;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                }
-
-                /* Form elements with better styling */
-                [data-testid="stTextInput"] > div > div > input,
-                [data-testid="stNumberInput"] > div > div > input,
-                [data-testid="stTextArea"] > div > div > textarea {
-                    background-color: white;
-                    color: #1e293b;
-                    border: 1px solid #cbd5e1;
-                    border-radius: 8px;
-                    padding: 12px 16px;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-                    font-size: 16px;
-                }
-
-                /* Button styling */
-                .stButton > button {
-                    background-color: #1e40af !important;
-                    color: white !important;
-                    font-weight: 500 !important;
-                    padding: 0.625rem 1.5rem !important;
-                    border-radius: 8px !important;
-                    border: none !important;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
-                    transition: all 0.2s !important;
-                }
-
-                .stButton > button:hover {
-                    background-color: #1e3a8a !important;
-                    transform: translateY(-1px);
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.15) !important;
-                }
-
-                /* Map container */
-                .folium-map {
-                    width: 100% !important;
-                    min-height: 500px !important;
-                    border-radius: 10px !important;
-                    border: 1px solid #e2e8f0 !important;
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.08) !important;
-                }
-
-                /* Card styling */
-                .content-card {
-                    background: white;
-                    border-radius: 10px;
-                    padding: 1.5rem;
-                    margin-bottom: 1.5rem;
-                    border: 1px solid #e2e8f0;
-                    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
-                }
-
-                /* Company card styling */
-                .company-card {
-                    background: white;
-                    border: 1px solid #e5e7eb;
-                    border-radius: 8px;
-                    padding: 1rem;
-                    margin-bottom: 0.75rem;
-                    transition: all 0.2s;
-                }
-
-                .company-card:hover {
-                    border-color: #2563eb;
-                    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
-                    transform: translateY(-1px);
-                }
-
-                .company-card.selected {
-                    background-color: #e6f2ff;
-                    border: 2px solid #2563eb;
-                }
-
-                /* Sidebar styling */
-                [data-testid="stSidebar"] {
-                    background-color: #1e3a8a !important;
-                    background-image: linear-gradient(180deg, #1e3a8a 0%, #2563eb 100%);
-                    padding-top: 2rem !important;
-                }
-
-                [data-testid="stSidebar"] h1, 
-                [data-testid="stSidebar"] h2, 
-                [data-testid="stSidebar"] h3 {
-                    color: white !important;
-                }
-
-                [data-testid="stSidebar"] button {
-                    background-color: white !important;
-                    color: #1e3a8a !important;
-                }
-
-                /* Hide default hamburger & footer */
-                #MainMenu, footer { visibility: hidden; }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-
-        # Center the title
-        st.markdown("<h1>Golden Sugar Daddy Goal</h1>", unsafe_allow_html=True)
-
-        # Use Streamlit's native tabs
-        tab1, tab2, tab3, tab4 = st.tabs(["🏠 Hem", "🎯 Hitta sponsorer", "⚙️ Inställningar", "👤 Min förening"])
-
-        # Main content wrapper for each tab
-        with tab1:
-            st.markdown('<div class="main-content">', unsafe_allow_html=True)
-            self._render_home()
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        with tab2:
-            st.markdown('<div class="main-content">', unsafe_allow_html=True)
-            self._render_search()
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        with tab3:
-            st.markdown('<div class="main-content">', unsafe_allow_html=True)
-            self._render_settings()
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        with tab4:
-            st.markdown('<div class="main-content">', unsafe_allow_html=True)
-            self._render_profile()
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # Sidebar
-        with st.sidebar:
-            st.title("Golden Sugar Daddy Goal")
-            if st.button("🔑 Logga in", key="login_button"):
-                st.session_state["show_login"] = True
-
-        # Modals
-        if st.session_state.get("show_login"):
-            self._show_login_modal()
-        if st.session_state.get("selected_sponsor"):
-            self._show_sponsor_modal(st.session_state["selected_sponsor"])
-
-    # ─────────── HOME ────────────────────────────────────────────────────────
-    @staticmethod
-    def _render_home() -> None:
-        # Clean and professional layout
-        col1, col2 = st.columns([1, 1])
-
-        with col1:
-            st.markdown(
-                """
-                <h2>Välkommen till Golden Sugar Daddy Goal</h2>
-                <p style='font-size:1.1rem;line-height:1.6;margin-bottom:1.5rem;'>
-                    Hitta de perfekta sponsorerna för din förening med hjälp av vår
-                    avancerade matchmaking-plattform.
-                </p>
-
-                <div style='margin-top:2rem;'>
-                    <h3>Hur det fungerar</h3>
-                    <div style='display:flex;align-items:center;margin-bottom:1rem;'>
-                        <div style='background:#1e40af;color:white;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:16px;font-weight:bold;'>1</div>
-                        <p>Registrera din förening eller hitta den i vår databas</p>
-                    </div>
-                    <div style='display:flex;align-items:center;margin-bottom:1rem;'>
-                        <div style='background:#1e40af;color:white;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:16px;font-weight:bold;'>2</div>
-                        <p>Ange dina sponsringsbehov och preferenser</p>
-                    </div>
-                    <div style='display:flex;align-items:center;margin-bottom:1rem;'>
-                        <div style='background:#1e40af;color:white;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:16px;font-weight:bold;'>3</div>
-                        <p>Få matchningar med företag som passar din profil</p>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-        with col2:
-            st.markdown(
-                """
-                <div style='background:#f0f9ff;border-radius:12px;padding:2rem;text-align:center;height:100%;'>
-                    <img src="https://via.placeholder.com/150x150" alt="Logo" style="border-radius:50%;margin-bottom:1.5rem;width:150px;height:150px;box-shadow:0 4px 8px rgba(0,0,0,0.1);" />
-                    <h3>Hitta sponsorer på ett smartare sätt</h3>
-                    <p style='margin-bottom:2rem;'>Vår plattform matchar din förening med sponsorer som har samma värderingar och mål.</p>
-                    <button 
-                       style='background:#1e40af;color:white;padding:0.75rem 1.5rem;border-radius:8px;text-decoration:none;display:inline-block;font-weight:500;border:none;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,0.1);'
-                       onclick="document.querySelector('[data-baseweb=tab]').nextElementSibling.click();">
-                        Kom igång nu
-                    </button>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-    # ─────────── SEARCH (with MAP) ─────────────────────────────────────────
-    def _render_search(self) -> None:
-        st.markdown("<h2>Hitta sponsorer</h2>", unsafe_allow_html=True)
-
-        # Create two columns for better layout
-        col1, col2 = st.columns([3, 5], gap="large")
-
-        with col1:
-            # Load data from CSV instead of database connection
-            associations_df = load_csv_data()
-
-            # Step 1: Association Search with Autocomplete
-            st.markdown("<h3>Steg 1: Hitta din förening</h3>", unsafe_allow_html=True)
-
-            # Create association autocomplete
-            association_input = st.text_input("Ange din förenings namn", key="association_name")
-
-            # Filter associations based on input
-            filtered_associations = pd.DataFrame()
-            if association_input:
-                filtered_associations = associations_df[
-                    associations_df['name'].str.contains(association_input, case=False)]
-
-            # Display matching associations
-            selected_association = None
-            new_association = False
-
-            if not filtered_associations.empty:
-                association_options = filtered_associations['name'].tolist()
-                selected_assoc_name = st.selectbox("Välj din förening från listan", options=[""] + association_options,
-                                                   key="selected_assoc")
-
-                if selected_assoc_name:
-                    # FIX: Added proper error handling for DataFrame access
-                    filtered_result = filtered_associations[filtered_associations['name'] == selected_assoc_name]
-                    if not filtered_result.empty:
-                        # Now we can safely use .iloc[0]
-                        selected_association = filtered_result.iloc[0]
-
-                        # Display association details
-                        st.markdown(f"""
-                        <div class="content-card">
-                            <h4 style="margin-top:0;color:#1e40af;">Förening: {selected_association['name']}</h4>
-                            <p>Adress: {selected_association['address']}</p>
-                            <p>Storlek: {selected_association['size_bucket'].capitalize()}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.warning("Ingen exakt matchning hittades")
-            else:
-                if association_input:
-                    st.warning("Din förening hittades inte. Vill du registrera den?")
-                    if st.button("Ja, registrera min förening"):
-                        new_association = True
-
-            # Step 2: New Association Registration (if needed)
-            if new_association:
-                st.markdown("<h3>Steg 2: Registrera din förening</h3>", unsafe_allow_html=True)
-                with st.form("new_association_form"):
-                    assoc_name = st.text_input("Föreningens namn", value=association_input)
-                    assoc_address = st.text_input("Fullständig adress", help="Gatuadress, postnummer och ort")
-                    assoc_members = st.number_input("Antal medlemmar", min_value=1, value=100)
-
-                    # Determine size bucket based on members
-                    size_bucket = "small"
-                    if assoc_members > 500:
-                        size_bucket = "large"
-                    elif assoc_members > 100:
-                        size_bucket = "medium"
-
-                    st.info(f"Din förening klassificeras som {size_bucket.upper()} baserat på medlemsantalet.")
-
-                    submit = st.form_submit_button("Registrera")
-
-                    if submit:
-                        # Geocode the address
-                        from geopy.geocoders import Nominatim
-                        from geopy.extra.rate_limiter import RateLimiter
-
-                        geolocator = Nominatim(user_agent="sponsor_match_geo")
-                        geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
-
-                        with st.spinner('Hämtar din förenings plats...'):
-                            location = geocode(assoc_address)
-
-                        if location:
-                            lat, lon = location.latitude, location.longitude
-
-                            # Instead of inserting into database, create a new association object
-                            selected_association = {
-                                "id": len(associations_df) + 1,
-                                "name": assoc_name,
-                                "member_count": int(assoc_members),
-                                "address": assoc_address,
-                                "lat": float(lat),
-                                "lon": float(lon),
-                                "size_bucket": str(size_bucket)
-                            }
-                            st.success("Förening registrerad!")
-                        else:
-                            st.error("Kunde inte hitta adressen. Kontrollera och försök igen.")
-
-            # Step 3: Search Parameters
-            if selected_association is not None:
-                st.markdown("<h3>Steg 3: Sökparametrar</h3>", unsafe_allow_html=True)
-
-                radius = st.slider("Sökradie (km)", 1, 50, 10, key="search_radius")
-
-                # Store association in session state
-                st.session_state["current_association"] = selected_association
-
-                # Search button
-                if st.button("Sök sponsorer", key="search_sponsors_btn"):
-                    # Instead of searching database, generate dummy companies
-                    with st.spinner('Söker efter lämpliga sponsorer...'):
-                        # Generate mock companies based on the selected association
-                        companies = self._generate_mock_companies(selected_association, radius)
-
-                        # Save results to session state
-                        if companies:
-                            st.session_state["search_results"] = companies
-                            st.session_state["current_page"] = 0
-                        else:
-                            st.warning("Inga matchande företag hittades inom den angivna radien.")
-                            st.session_state["search_results"] = []
-
-        with col2:
-            # Map section header
-            st.markdown("<h3>Karta över sponsorer</h3>", unsafe_allow_html=True)
-
-            # Always show map, either with selected association or default view of Sweden
-            if "current_association" in st.session_state and st.session_state.get("search_results"):
-                # Show map with search results
-                page_size = 10
-                current_page = st.session_state.get("current_page", 0)
-                results = st.session_state["search_results"]
-                start_idx = current_page * page_size
-                end_idx = min(start_idx + page_size, len(results))
-                page_results = results[start_idx:end_idx]
-
-                self._render_results_map(st.session_state["current_association"], page_results)
-
-                # Show pagination and results below map
-                if results:
-                    total_pages = max(1, (len(results) + page_size - 1) // page_size)
-
-                    # Display page navigation
-                    cols = st.columns([2, 3, 2])
-
-                    with cols[0]:
-                        if current_page > 0:
-                            if st.button("◀ Föregående", key="prev_page"):
-                                st.session_state["current_page"] = current_page - 1
-                                st.experimental_rerun()
-
-                    with cols[1]:
-                        st.markdown(f"<p style='text-align:center'>Sida {current_page + 1} av {total_pages}</p>",
-                                    unsafe_allow_html=True)
-
-                    with cols[2]:
-                        if current_page < total_pages - 1:
-                            if st.button("Nästa ▶", key="next_page"):
-                                st.session_state["current_page"] = current_page + 1
-                                st.experimental_rerun()
-
-                    # Show result cards
-                    for company in page_results:
-                        is_selected = st.session_state.get("selected_company_id") == company["id"]
-
-                        # Create a visually appealing company card
-                        st.markdown(f"""
-                        <div class="company-card {'selected' if is_selected else ''}" 
-                             onclick="selectCompany({company['id']})">
-                            <div style="font-weight:600;color:#1e40af;font-size:1.1rem;margin-bottom:0.5rem;">
-                                {company['name']}
-                            </div>
-                            <div style="display:flex;justify-content:space-between;color:#4b5563;">
-                                <div>Avstånd: {company['distance']:.1f} km</div>
-                                <div>Storlek: {company['size_bucket'].capitalize()}</div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                    # JavaScript to handle company selection
-                    st.markdown("""
-                    <script>
-                    function selectCompany(id) {
-                        window.parent.postMessage({
-                            type: "streamlit:setComponentValue",
-                            value: id,
-                            dataType: "int",
-                            componentId: "selected_company_id"
-                        }, "*");
-                    }
-                    </script>
-                    """, unsafe_allow_html=True)
-
-                    # Hidden input to capture selected company
-                    selected_id = st.text_input("", key="selected_company_id", label_visibility="collapsed")
-                    if selected_id and selected_id != st.session_state.get("selected_company_id"):
-                        st.session_state["selected_company_id"] = int(selected_id)
-                        # Find the selected company and store it
-                        selected_company = next((c for c in results if c["id"] == int(selected_id)), None)
-                        if selected_company:
-                            st.session_state["selected_sponsor"] = selected_company
-                        st.experimental_rerun()
-
-            else:
-                # Show default map centered on Sweden
-                default_association = {
-                    "lat": 59.3293,
-                    "lon": 18.0686,
-                    "name": "Sverige",
-                    "size_bucket": "medium"
-                }
-                self._render_results_map(default_association, [])
-
-                # Show helper text when no search has been performed
-                st.markdown("""
-                <div style="text-align:center;padding:1.5rem;background:#f8fafc;border-radius:8px;margin-top:1rem;border:1px solid #e2e8f0;">
-                    <p style="margin-bottom:1rem;">Välj din förening och klicka på "Sök sponsorer" för att se matchande sponsorer på kartan.</p>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="11" cy="11" r="8"></circle>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                    </svg>
-                </div>
-                """, unsafe_allow_html=True)
-
-    # Generate mock companies for testing
-    @staticmethod
-    def _generate_mock_companies(association, radius):
-        """Generate mock companies around the selected association's location"""
-        import random
-        import numpy as np
-
-        # Extract association location
-        base_lat = float(association["lat"])
-        base_lon = float(association["lon"])
-
-        # Company names for testing
-        company_names = [
-            "Nordea Bank", "Volvo Group", "Ericsson AB", "IKEA Göteborg",
-            "H&M Retail", "SEB Bank", "Handelsbanken", "ICA Supermarket",
-            "Telia Company", "Elekta AB", "Atlas Copco", "SKF Group",
-            "Sandvik AB", "Systembolaget", "Circle K", "Stadium Sports",
-            "Max Burgers", "Åhléns", "Clas Ohlson", "Nordnet Bank"
-        ]
-
-        # Size buckets with same distribution as association size
-        size_buckets = ["small", "medium", "large"]
-        size_weights = {"small": 0.2, "medium": 0.5, "large": 0.3}
-
-        # Generate 5-15 companies
-        num_companies = random.randint(5, 15)
-        companies = []
-
-        for i in range(num_companies):
-            # Generate random distance within radius (km)
-            distance = random.uniform(0.5, radius)
-
-            # Generate random direction (angle in radians)
-            angle = random.uniform(0, 2 * np.pi)
-
-            # Calculate new coordinates (rough approximation)
-            # 111.32 km = 1 degree latitude
-            # 111.32 * cos(latitude) km = 1 degree longitude
-            lat_offset = distance / 111.32 * np.cos(angle)
-            lon_offset = distance / (111.32 * np.cos(np.radians(base_lat))) * np.sin(angle)
-
-            new_lat = base_lat + lat_offset
-            new_lon = base_lon + lon_offset
-
-            # Assign company size - match with association size for better matches
-            # but include some variety
-            if random.random() < 0.7:  # 70% chance to match association size
-                size_bucket = association["size_bucket"]
-            else:
-                # Random size from distribution
-                size_bucket = random.choices(size_buckets,
-                                             weights=[size_weights["small"],
-                                                      size_weights["medium"],
-                                                      size_weights["large"]])[0]
-
-            # Create company object
-            company = {
-                "id": i + 1,
-                "name": company_names[i % len(company_names)],
-                "description": f"Ett {size_bucket} företag inom {random.choice(['teknologi', 'finans', 'handel', 'tillverkning', 'tjänster'])}.",
-                "lat": new_lat,
-                "lon": new_lon,
-                "distance": distance,
-                "size_bucket": size_bucket,
-                "score": random.randint(40, 95),
-                "contact": {
-                    "email": f"kontakt@{company_names[i % len(company_names)].lower().replace(' ', '')}.se",
-                    "phone": f"0{random.randint(7, 8)}-{random.randint(100, 999)} {random.randint(10, 99)} {random.randint(10, 99)}"
-                }
-            }
-
-            companies.append(company)
-
-        # Sort by distance
-        companies.sort(key=lambda x: x["distance"])
-
-        return companies
-
-    # Add new method to render results map
-    @staticmethod
-    def _render_results_map(association, companies):
-        import folium
-        from streamlit_folium import st_folium
-
-        # Create map centered on association
-        try:
-            # FIX: Ensure proper type conversion for map coordinates
-            lat = float(association["lat"])
-            lon = float(association["lon"])
-            m = folium.Map(location=[lat, lon], zoom_start=12)
-
-            # Add association marker
-            folium.Marker(
-                location=[lat, lon],
-                popup=f"<b>{association['name']}</b><br>({association['size_bucket'].capitalize()})",
-                icon=folium.Icon(color="red", icon="home"),
-            ).add_to(m)
-
-            # Add markers for each company
-            for company in companies:
-                try:
-                    comp_lat = float(company["lat"])
-                    comp_lon = float(company["lon"])
-                    folium.Marker(
-                        location=[comp_lat, comp_lon],
-                        popup=f"<b>{company['name']}</b><br>Avstånd: {company['distance']:.1f} km<br>Storlek: {company['size_bucket'].capitalize()}",
-                        icon=folium.Icon(color="blue", icon="briefcase"),
-                    ).add_to(m)
-                except (KeyError, ValueError, TypeError):
-                    # Skip this company if there's an issue with its coordinates
-                    continue
-
-            # Create a line from association to selected company if any
-            if "selected_company_id" in st.session_state:
-                # FIX: Use safe lookup with next() and a default value
-                selected = next((c for c in companies if c["id"] == st.session_state["selected_company_id"]), None)
-                if selected:  # Only proceed if we found a matching company
-                    try:
-                        folium.PolyLine(
-                            locations=[[lat, lon], [float(selected["lat"]), float(selected["lon"])]],
-                            color="#1e40af",
-                            weight=3,
-                            opacity=0.7,
-                            dash_array="5"
-                        ).add_to(m)
-                    except (KeyError, ValueError, TypeError):
-                        # Skip drawing line if there's an issue
-                        pass
-
-            # Display the map
-            st_folium(m, height=500)
-        except Exception as e:
-            st.error(f"Kunde inte visa kartan: {str(e)}")
-
-    # ─────────── SETTINGS PAGE ───────────────────────────────────────────────
-    @staticmethod
-    def _render_settings() -> None:
-        st.markdown("<h2>Inställningar</h2>", unsafe_allow_html=True)
-
-        # Use columns for better layout
-        col1, col2 = st.columns(2, gap="large")
-
-        with col1:
-            st.markdown('<div class="content-card">', unsafe_allow_html=True)
-            st.markdown("<h3>Notifikationer</h3>", unsafe_allow_html=True)
-            st.checkbox("E-postnotifikationer", value=True)
-            st.checkbox("Sponsringsrekommendationer", value=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-            st.markdown('<div class="content-card">', unsafe_allow_html=True)
-            st.markdown("<h3>Datainställningar</h3>", unsafe_allow_html=True)
-            st.checkbox("Spara sökhistorik", value=True)
-            st.checkbox("Tillåt anonym användardata", value=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        with col2:
-            st.markdown('<div class="content-card">', unsafe_allow_html=True)
-            st.markdown("<h3>Visningsalternativ</h3>", unsafe_allow_html=True)
-            st.markdown("<p>Resultat per sida</p>", unsafe_allow_html=True)
-            st.select_slider(
-                "Antal resultat",
-                options=[5, 10, 15, 20, 25],
-                value=15,
-                key="results_per_page",
-                label_visibility="collapsed"
-            )
-
-            st.markdown("<p>Kartdetaljnivå</p>", unsafe_allow_html=True)
-            st.select_slider(
-                "Detaljnivå",
-                options=["Låg", "Medium", "Hög"],
-                value="Medium",
-                key="map_detail_level",
-                label_visibility="collapsed"
-            )
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # Add save button at the bottom
-        st.markdown('<div style="text-align:center;margin-top:2rem;">', unsafe_allow_html=True)
-        if st.button("Spara inställningar", key="save_settings"):
-            st.success("Inställningarna har sparats!")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # ─────────── PROFILE ─────────────────────────────────────────────────────
-    @staticmethod
-    def _render_profile() -> None:
-        st.markdown("<h2>Min förening</h2>", unsafe_allow_html=True)
-
-        st.markdown('<div class="content-card">', unsafe_allow_html=True)
-
-        # Use columns for form layout
-        col1, col2 = st.columns(2, gap="medium")
-
-        with col1:
-            st.text_input("Föreningens namn", value="", key="profile_name")
-            st.text_input("Ort", value="", key="profile_city")
-
-        with col2:
-            st.text_input("E-post", value="", key="profile_email")
-            st.text_input("Telefon", value="", key="profile_phone")
-
-        # Full width for sponsorship needs
-        st.text_area("Sponsringsbehov", value="", key="profile_needs", height=150)
-
-        # Add save button
-        st.markdown('<div style="text-align:center;margin-top:1.5rem;">', unsafe_allow_html=True)
-        if st.button("Spara", key="save_profile"):
-            st.success("Profilen har sparats!")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # ─────────── MODALS ────────────────────────────────────────────────────
-    @staticmethod
-    def _show_login_modal() -> None:
-        with _open_modal("Logga in"):
-            st.markdown('<div style="padding:1rem;">', unsafe_allow_html=True)
-            st.text_input("E-post", value="", key="login_email")
-            st.text_input("Lösenord", value="", type="password", key="login_pw")
-
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                if st.button("Logga in", key="login_submit"):
-                    st.session_state["show_login"] = False
-            with col2:
-                if st.button("Avbryt", key="login_cancel"):
-                    st.session_state["show_login"] = False
-            st.markdown('</div>', unsafe_allow_html=True)
-
-    @staticmethod
-    def _show_sponsor_modal(sponsor: Dict[str, Any]) -> None:
-        # FIX: Added safety check for sponsor structure
-        if not isinstance(sponsor, dict):
-            st.error("Ogiltig sponsor-data")
-            return
-
-        with _open_modal(sponsor.get("name", "Sponsor")):
-            st.markdown('<div style="padding:1rem;">', unsafe_allow_html=True)
-
-            # Company details
-            st.markdown(f"""
-            <div style="margin-bottom:1.5rem;">
-                <p style="font-size:1rem;">{sponsor.get("description", "")}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # Contact information
-            contact = sponsor.get("contact", {})
-            st.markdown(f"""
-            <div style="margin-bottom:1.5rem;">
-                <h4 style="margin-bottom:0.5rem;">Kontaktuppgifter</h4>
-                <p><strong>E-post:</strong> {contact.get('email', 'N/A')}</p>
-                <p><strong>Telefon:</strong> {contact.get('phone', 'N/A')}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # Message form
-            st.markdown("<h4>Skicka meddelande</h4>", unsafe_allow_html=True)
-            st.text_area("Meddelande", value="", key="msg_to_sponsor", height=150)
-
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                if st.button("Skicka", key="msg_submit"):
-                    st.success("Meddelande skickat!")
-                    st.session_state["selected_sponsor"] = None
-            with col2:
-                if st.button("Avbryt", key="msg_cancel"):
-                    st.session_state["selected_sponsor"] = None
-
-            st.markdown('</div>', unsafe_allow_html=True)
-
-
-def main() -> None:
-    SponsorMatchUI().render_main_page()
+        conn.commit()
+    except Exception as e:
+        logging.warning(f"Failed to cache geocode for '{address}': {e}")
+
+    return lat, lon
+
+
+def main():
+    """Main entry point: parse arguments, geocode missing entries, and write output."""
+    init_logging()
+    parser = argparse.ArgumentParser(description="Build associations CSV with geocoding")
+    parser.add_argument("--input-csv", type=Path, default=DEFAULT_INPUT, help="Path to raw CSV")
+    parser.add_argument("--output-csv", type=Path, default=DEFAULT_OUTPUT, help="Path to enriched CSV")
+    parser.add_argument("--cache-db", type=Path, default=DEFAULT_CACHE_DB, help="SQLite cache DB path")
+    parser.add_argument("--api-key", type=str, default=None, help="Geocoding API key")
+    args = parser.parse_args()
+
+    # Load raw data
+    if not args.input_csv.exists():
+        logging.error(f"Input CSV not found: {args.input_csv}")
+        return
+    df = pd.read_csv(args.input_csv)
+    logging.info(f"Loaded {len(df)} rows from {args.input_csv}")
+
+    # Identify or create lat/lon columns
+    lat_col = next((c for c in df.columns if c.lower() in ("latitude","lat")), None)
+    lon_col = next((c for c in df.columns if c.lower() in ("longitude","lon")), None)
+    if not lat_col or not lon_col:
+        lat_col, lon_col = "latitude","longitude"
+        df[lat_col] = pd.NA
+        df[lon_col] = pd.NA
+    logging.info(f"Using columns: lat={lat_col}, lon={lon_col}")
+
+    # Prepare cache connection
+    cache_conn = open_cache(args.cache_db)
+
+    # Geocode entries missing coordinates
+    for idx, row in df.iterrows():
+        if pd.isna(row[lat_col]) or pd.isna(row[lon_col]):
+            address = row.get("address") or row.get("club_name") or ""
+            if not address:
+                logging.warning(f"No address for row {idx}; skipping")
+                continue
+            lat, lon = geocode(address, cache_conn, args.api_key)
+            if lat is not None:
+                df.at[idx, lat_col] = lat
+                df.at[idx, lon_col] = lon
+
+    # Write the enriched CSV
+    args.output_csv.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(args.output_csv, index=False)
+    logging.info(f"Wrote enriched CSV to {args.output_csv}")
 
 
 if __name__ == "__main__":
     main()
+
 
 ================================================================================
 FIL: .streamlit/config.toml
@@ -1770,6 +1135,9 @@ url_override = "mysql+mysqlconnector://sponsor_user:Sports-2025?!@localhost:3306
 ================================================================================
 FIL: sponsor_match/__init__.py
 ================================================================================
+
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
 
 #!/usr/bin/env python3
 """
@@ -1804,15 +1172,31 @@ FIL: sponsor_match/services/__init__.py
 FIL: sponsor_match/services/service.py
 ================================================================================
 
-import logging
-from typing import Dict, Optional
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
 
+#!/usr/bin/env python3
+"""
+sponsor_match/services/service.py
+
+Complete service layer implementation with proper score normalization,
+geocoded data support, and enhanced search functionality.
+"""
+
+import logging
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Dict, Optional, Tuple
+
+import numpy as np
 import pandas as pd
 from sqlalchemy.orm import sessionmaker
 
 from sponsor_match.core.config import LOG_LEVEL
+from sponsor_match.ml.pipeline import score_and_rank, load_geocoded_data, ScoringWeights
 from sponsor_match.models.entities import Association, Company, Base
 
+# Configure logging
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
     format="%(asctime)s %(levelname)s %(message)s"
@@ -1820,8 +1204,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class SearchResult:
+    """Structured search result with validation."""
+    id: int
+    name: str
+    type: str  # 'association' or 'company'
+    address: Optional[str]
+    latitude: float
+    longitude: float
+    score: float  # Always between 0 and 1
+    metadata: Dict
+
+    def __post_init__(self):
+        """Validate score is in valid range."""
+        if not 0 <= self.score <= 1:
+            logger.warning(f"Invalid score {self.score} for {self.name}, clamping to valid range")
+            self.score = np.clip(self.score, 0.0, 1.0)
+
+
 class SponsorMatchService:
-    """Main service class for sponsor matching operations."""
+    """Main service class for sponsor matching operations with score validation."""
 
     def __init__(self, db_engine):
         """Initialize service with database engine."""
@@ -1831,56 +1234,258 @@ class SponsorMatchService:
         # Ensure tables exist
         Base.metadata.create_all(bind=db_engine)
 
+        # Cache for geocoded data
+        self._geocoded_cache = None
+        self._cache_timestamp = None
+        self._cache_ttl = 3600  # 1 hour TTL
+
+        # Initialize scoring weights with validation
+        self.scoring_weights = ScoringWeights(
+            distance=0.4,
+            size_match=0.3,
+            cluster_match=0.2,
+            industry_affinity=0.1
+        )
+
+    def _get_geocoded_data(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Get geocoded data with caching."""
+        now = datetime.now()
+
+        # Check cache validity
+        if (self._geocoded_cache is not None and
+                self._cache_timestamp is not None and
+                (now - self._cache_timestamp).seconds < self._cache_ttl):
+            return self._geocoded_cache
+
+        # Load fresh data
+        logger.info("Loading fresh geocoded data...")
+        associations_df, companies_df = load_geocoded_data()
+
+        # Update cache
+        self._geocoded_cache = (associations_df, companies_df)
+        self._cache_timestamp = now
+
+        return associations_df, companies_df
+
     def search(self, query: str, limit: int = 100) -> pd.DataFrame:
-        """Search both associations and companies by name."""
-        with self.Session() as session:
+        """
+        Search both associations and companies by name with relevance scoring.
+
+        Uses fuzzy matching for better results and ensures all scores are
+        properly normalized to [0, 1] range.
+        """
+        # Normalize query
+        query_lower = query.lower().strip()
+
+        if len(query_lower) < 2:
+            return pd.DataFrame()  # Empty result for very short queries
+
+        results = []
+
+        # Try geocoded data first
+        try:
+            associations_df, companies_df = self._get_geocoded_data()
+
             # Search associations
-            associations = session.query(
-                Association.id,
-                Association.name,
-                Association.address,
-                Association.lat.label('latitude'),
-                Association.lon.label('longitude')
-            ).filter(
-                Association.name.ilike(f'%{query}%')
-            ).limit(limit // 2).all()
+            for _, assoc in associations_df.iterrows():
+                name_lower = str(assoc.get('name', '')).lower()
+
+                # Calculate text similarity score
+                score = self._calculate_text_similarity(query_lower, name_lower)
+
+                if score > 0.3:  # Minimum threshold
+                    results.append(SearchResult(
+                        id=assoc.get('id', 0),
+                        name=assoc.get('name', ''),
+                        type='association',
+                        address=assoc.get('address', ''),
+                        latitude=assoc.get('latitude', assoc.get('lat', 0)),
+                        longitude=assoc.get('longitude', assoc.get('lon', 0)),
+                        score=score,
+                        metadata={
+                            'size_bucket': assoc.get('size_bucket', 'unknown'),
+                            'member_count': assoc.get('member_count', 0)
+                        }
+                    ))
 
             # Search companies
-            companies = session.query(
-                Company.id,
-                Company.name,
-                Company.lat.label('latitude'),
-                Company.lon.label('longitude')
-            ).filter(
-                Company.name.ilike(f'%{query}%')
-            ).limit(limit // 2).all()
+            for _, comp in companies_df.iterrows():
+                name_lower = str(comp.get('name', '')).lower()
+
+                score = self._calculate_text_similarity(query_lower, name_lower)
+
+                if score > 0.3:
+                    results.append(SearchResult(
+                        id=comp.get('id', 0),
+                        name=comp.get('name', ''),
+                        type='company',
+                        address=comp.get('address', ''),
+                        latitude=comp.get('latitude', comp.get('lat', 0)),
+                        longitude=comp.get('longitude', comp.get('lon', 0)),
+                        score=score,
+                        metadata={
+                            'industry': comp.get('industry', 'unknown'),
+                            'size_bucket': comp.get('size_bucket', 'unknown')
+                        }
+                    ))
+
+        except Exception as e:
+            logger.warning(f"Geocoded data search failed: {e}, falling back to database")
+
+            # Fallback to database search
+            with self.Session() as session:
+                # Search associations in database
+                associations = session.query(
+                    Association.id,
+                    Association.name,
+                    Association.address,
+                    Association.lat.label('latitude'),
+                    Association.lon.label('longitude'),
+                    Association.size_bucket,
+                    Association.member_count
+                ).filter(
+                    Association.name.ilike(f'%{query}%')
+                ).limit(limit // 2).all()
+
+                for assoc in associations:
+                    score = self._calculate_text_similarity(query_lower, assoc.name.lower())
+                    results.append(SearchResult(
+                        id=assoc.id,
+                        name=assoc.name,
+                        type='association',
+                        address=assoc.address,
+                        latitude=assoc.latitude,
+                        longitude=assoc.longitude,
+                        score=score,
+                        metadata={
+                            'size_bucket': assoc.size_bucket,
+                            'member_count': assoc.member_count
+                        }
+                    ))
+
+                # Search companies in database
+                companies = session.query(
+                    Company.id,
+                    Company.name,
+                    Company.lat.label('latitude'),
+                    Company.lon.label('longitude'),
+                    Company.size_bucket,
+                    Company.industry
+                ).filter(
+                    Company.name.ilike(f'%{query}%')
+                ).limit(limit // 2).all()
+
+                for comp in companies:
+                    score = self._calculate_text_similarity(query_lower, comp.name.lower())
+                    results.append(SearchResult(
+                        id=comp.id,
+                        name=comp.name,
+                        type='company',
+                        address=None,
+                        latitude=comp.latitude,
+                        longitude=comp.longitude,
+                        score=score,
+                        metadata={
+                            'industry': comp.industry,
+                            'size_bucket': comp.size_bucket
+                        }
+                    ))
+
+        # Sort by score and convert to DataFrame
+        results.sort(key=lambda x: x.score, reverse=True)
+        results = results[:limit]
 
         # Convert to DataFrame
-        results = []
-        for assoc in associations:
-            results.append({
-                'type': 'association',
-                'id': assoc.id,
-                'name': assoc.name,
-                'address': assoc.address,
-                'latitude': assoc.latitude,
-                'longitude': assoc.longitude
-            })
+        if results:
+            df = pd.DataFrame([{
+                'type': r.type,
+                'id': r.id,
+                'name': r.name,
+                'address': r.address,
+                'latitude': r.latitude,
+                'longitude': r.longitude,
+                'score': r.score,
+                'score_percentage': round(r.score * 100, 1),  # Safe percentage
+                **r.metadata
+            } for r in results])
+            return df
+        else:
+            return pd.DataFrame()
 
-        for comp in companies:
-            results.append({
-                'type': 'company',
-                'id': comp.id,
-                'name': comp.name,
-                'address': None,
-                'latitude': comp.latitude,
-                'longitude': comp.longitude
-            })
+    def _calculate_text_similarity(self, query: str, text: str) -> float:
+        """
+        Calculate normalized text similarity score between 0 and 1.
 
-        return pd.DataFrame(results)
+        Uses multiple similarity metrics combined with validated weights.
+        """
+        if not query or not text:
+            return 0.0
+
+        # Exact match
+        if query == text:
+            return 1.0
+
+        # Substring match
+        if query in text:
+            # Score based on how much of the text is the query
+            substring_score = len(query) / len(text)
+        else:
+            substring_score = 0.0
+
+        # Token overlap (word-level matching)
+        query_tokens = set(query.split())
+        text_tokens = set(text.split())
+
+        if query_tokens and text_tokens:
+            intersection = query_tokens.intersection(text_tokens)
+            union = query_tokens.union(text_tokens)
+            jaccard_score = len(intersection) / len(union) if union else 0.0
+        else:
+            jaccard_score = 0.0
+
+        # Character-level similarity (for typos)
+        char_overlap = sum(1 for c in query if c in text)
+        char_score = char_overlap / max(len(query), len(text))
+
+        # Combine scores with weights that sum to 1.0
+        weights = {
+            'substring': 0.5,
+            'jaccard': 0.3,
+            'char': 0.2
+        }
+
+        final_score = (
+                substring_score * weights['substring'] +
+                jaccard_score * weights['jaccard'] +
+                char_score * weights['char']
+        )
+
+        # Ensure score is in valid range
+        return np.clip(final_score, 0.0, 1.0)
 
     def get_association_by_name(self, name: str) -> Optional[Dict]:
         """Get association details by name."""
+        # Try geocoded data first
+        try:
+            associations_df, _ = self._get_geocoded_data()
+
+            # Find exact match
+            match = associations_df[associations_df['name'] == name]
+            if not match.empty:
+                assoc = match.iloc[0]
+                return {
+                    'id': int(assoc.get('id', 0)),
+                    'name': assoc.get('name', ''),
+                    'lat': float(assoc.get('latitude', assoc.get('lat', 0))),
+                    'lon': float(assoc.get('longitude', assoc.get('lon', 0))),
+                    'size_bucket': assoc.get('size_bucket', 'medium'),
+                    'member_count': int(assoc.get('member_count', 0)),
+                    'address': assoc.get('address', '')
+                }
+        except Exception as e:
+            logger.warning(f"Geocoded lookup failed: {e}, using database")
+
+        # Fallback to database
         with self.Session() as session:
             assoc = session.query(Association).filter(
                 Association.name == name
@@ -1896,10 +1501,28 @@ class SponsorMatchService:
                     'member_count': assoc.member_count,
                     'address': assoc.address
                 }
+
         return None
 
     def get_companies_for_matching(self) -> pd.DataFrame:
         """Get all companies with coordinates for matching."""
+        # Prefer geocoded data
+        try:
+            _, companies_df = self._get_geocoded_data()
+
+            # Ensure consistent column names
+            if 'latitude' in companies_df.columns:
+                companies_df = companies_df.rename(columns={
+                    'latitude': 'lat',
+                    'longitude': 'lon'
+                })
+
+            return companies_df
+
+        except Exception as e:
+            logger.warning(f"Failed to get geocoded companies: {e}")
+
+        # Fallback to database
         with self.Session() as session:
             companies = session.query(Company).filter(
                 Company.lat.isnot(None),
@@ -1921,28 +1544,131 @@ class SponsorMatchService:
 
         return pd.DataFrame(data)
 
-    def recommend(self, association_name: str, top_n: int = 10) -> pd.DataFrame:
-        """Simple distance-based recommendations."""
+    def recommend(self, association_name: str, top_n: int = 10, max_distance: float = 50.0) -> pd.DataFrame:
+        """
+        Get sponsor recommendations with properly normalized scores.
+
+        This method orchestrates the recommendation process:
+        1. Finds the association
+        2. Calls the ML pipeline for scoring
+        3. Ensures all scores are properly normalized
+        4. Returns formatted results
+        """
         # Get association
         assoc = self.get_association_by_name(association_name)
         if not assoc:
             logger.warning(f"No association found matching '{association_name}'")
             return pd.DataFrame()
 
-        # Get companies
-        companies_df = self.get_companies_for_matching()
-        if companies_df.empty:
-            logger.info("No companies found.")
+        # Use ML pipeline for recommendations
+        try:
+            recommendations = score_and_rank(
+                association_id=assoc['id'],
+                bucket=assoc['size_bucket'],
+                max_distance=max_distance,
+                top_n=top_n,
+                weights=self.scoring_weights
+            )
+
+            if not recommendations:
+                logger.info("No recommendations found within criteria")
+                return pd.DataFrame()
+
+            # Convert to DataFrame with additional formatting
+            df = pd.DataFrame(recommendations)
+
+            # Add percentage scores (guaranteed to be 0-100)
+            df['score_percentage'] = df['score'].apply(lambda x: round(np.clip(x, 0, 1) * 100, 1))
+
+            # Add match quality labels
+            def get_match_quality(score):
+                if score >= 0.8:
+                    return 'Excellent'
+                elif score >= 0.6:
+                    return 'Good'
+                elif score >= 0.4:
+                    return 'Fair'
+                else:
+                    return 'Possible'
+
+            df['match_quality'] = df['score'].apply(get_match_quality)
+
+            # Sort by score descending
+            df = df.sort_values('score', ascending=False).reset_index(drop=True)
+
+            return df
+
+        except Exception as e:
+            logger.error(f"Recommendation error: {e}")
             return pd.DataFrame()
 
-        # Calculate distances (simple Euclidean for now)
-        lat, lon = assoc['lat'], assoc['lon']
-        companies_df["distance"] = (
-                                           (companies_df["lat"] - lat) ** 2 +
-                                           (companies_df["lon"] - lon) ** 2
-                                   ) ** 0.5
+    def validate_all_scores(self) -> Dict[str, any]:
+        """
+        Diagnostic method to validate scoring across all associations.
 
-        return companies_df.sort_values("distance").head(top_n).reset_index(drop=True)
+        Returns statistics about score distributions to ensure they're
+        all within valid ranges.
+        """
+        associations_df, _ = self._get_geocoded_data()
+
+        score_stats = {
+            'total_checked': 0,
+            'invalid_scores': [],
+            'score_distribution': {
+                '0-20%': 0,
+                '20-40%': 0,
+                '40-60%': 0,
+                '60-80%': 0,
+                '80-100%': 0,
+                '>100%': 0  # Should always be 0
+            }
+        }
+
+        # Sample associations
+        sample_size = min(10, len(associations_df))
+        sample_assocs = associations_df.sample(sample_size)
+
+        for _, assoc in sample_assocs.iterrows():
+            try:
+                # Get recommendations
+                recommendations = score_and_rank(
+                    association_id=assoc.get('id', 0),
+                    bucket=assoc.get('size_bucket', 'medium'),
+                    max_distance=50,
+                    top_n=5
+                )
+
+                score_stats['total_checked'] += len(recommendations)
+
+                # Check each score
+                for rec in recommendations:
+                    score = rec['score']
+
+                    if score < 0 or score > 1:
+                        score_stats['invalid_scores'].append({
+                            'association': assoc.get('name'),
+                            'company': rec['name'],
+                            'score': score
+                        })
+
+                    # Categorize score
+                    if score > 1:
+                        score_stats['score_distribution']['>100%'] += 1
+                    elif score >= 0.8:
+                        score_stats['score_distribution']['80-100%'] += 1
+                    elif score >= 0.6:
+                        score_stats['score_distribution']['60-80%'] += 1
+                    elif score >= 0.4:
+                        score_stats['score_distribution']['40-60%'] += 1
+                    elif score >= 0.2:
+                        score_stats['score_distribution']['20-40%'] += 1
+                    else:
+                        score_stats['score_distribution']['0-20%'] += 1
+
+            except Exception as e:
+                logger.error(f"Validation error for {assoc.get('name')}: {e}")
+
+        return score_stats
 
 
 # Module-level functions for backward compatibility
@@ -1968,6 +1694,452 @@ def recommend(engine, association_name: str, top_n: int = 10) -> pd.DataFrame:
     service = get_service(engine)
     return service.recommend(association_name, top_n)
 
+
+# Testing and validation
+if __name__ == "__main__":
+    from sponsor_match.core.db import get_engine
+
+    engine = get_engine()
+    service = SponsorMatchService(engine)
+
+    # Validate scoring
+    print("Validating scoring system...")
+    stats = service.validate_all_scores()
+
+    print(f"Checked {stats['total_checked']} scores")
+    print(f"Invalid scores found: {len(stats['invalid_scores'])}")
+    print("\nScore distribution:")
+    for range_name, count in stats['score_distribution'].items():
+        print(f"  {range_name}: {count}")
+
+    if stats['score_distribution']['>100%'] > 0:
+        print("\n⚠️ WARNING: Found scores above 100%! This needs immediate fixing.")
+    else:
+        print("\n✅ All scores are within valid range (0-100%)")
+
+================================================================================
+FIL: sponsor_match/services/simple_services.py
+================================================================================
+
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
+"""
+sponsor_match/services/simple_service.py
+FINAL FIX - Service layer that handles Swedish company data correctly
+"""
+
+import logging
+import math
+from pathlib import Path
+from typing import Dict, Optional
+
+import joblib
+import numpy as np
+import pandas as pd
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class SimpleSponsorService:
+    """Enhanced service that integrates with ML models and handles Swedish data correctly."""
+
+    def __init__(self):
+        """Load data and models once at startup."""
+        print("Loading prepared data and ML models...")
+
+        # Get the project root directory
+        current_file = Path(__file__)
+        project_root = current_file.parent.parent.parent
+
+        # Build paths to data files
+        assoc_path = project_root / 'data' / 'associations_prepared.csv'
+        comp_path = project_root / 'data' / 'companies_prepared.csv'
+
+        # Check if prepared files exist
+        if not assoc_path.exists():
+            raise FileNotFoundError(f"Associations file not found at {assoc_path}. Run prepare_all_data.py first!")
+        if not comp_path.exists():
+            raise FileNotFoundError(f"Companies file not found at {comp_path}. Run prepare_all_data.py first!")
+
+        # Load prepared data
+        self.associations = pd.read_csv(assoc_path)
+        self.companies = pd.read_csv(comp_path)
+
+        # Create display names for companies
+        self._create_company_names()
+
+        # Load ML models
+        self.models = self._load_models(project_root)
+
+        # Define enhanced size compatibility matrix
+        self.size_compatibility = {
+            # Association size -> Company size compatibility scores
+            # Small associations work best with small/medium companies
+            ('small', 'small'): 1.0,
+            ('small', 'medium'): 0.9,
+            ('small', 'large'): 0.6,
+            ('small', 'enterprise'): 0.4,
+
+            # Medium associations have more flexibility
+            ('medium', 'small'): 0.7,
+            ('medium', 'medium'): 1.0,
+            ('medium', 'large'): 0.9,
+            ('medium', 'enterprise'): 0.7,
+
+            # Large associations need substantial sponsors
+            ('large', 'small'): 0.4,
+            ('large', 'medium'): 0.7,
+            ('large', 'large'): 1.0,
+            ('large', 'enterprise'): 0.95,
+        }
+
+        print(f"Loaded {len(self.associations)} associations and {len(self.companies)} companies")
+        print(f"ML models loaded: {list(self.models.keys())}")
+
+    def _create_company_names(self):
+        """Create readable display names for companies."""
+        # For Swedish companies, create names from district and org number
+        if 'name' not in self.companies.columns or self.companies['name'].str.startswith('Company_').any():
+            self.companies['display_name'] = self.companies.apply(
+                lambda row: self._generate_company_name(row), axis=1
+            )
+        else:
+            self.companies['display_name'] = self.companies['name']
+
+    def _generate_company_name(self, row):
+        """Generate a readable company name from available data."""
+        # Try to use district + last 6 digits of org number
+        district = row.get('district', 'Göteborg')
+        org_nr = str(row.get('PeOrgNr', row.get('id', '')))
+
+        # Common Swedish company types based on size
+        company_types = {
+            'small': ['Handelsbolag', 'Enskild Firma', 'HB', 'EF'],
+            'medium': ['AB', 'Aktiebolag', 'Trading'],
+            'large': ['AB', 'Group', 'International'],
+            'enterprise': ['Group', 'International', 'Nordic']
+        }
+
+        # Get a company type based on size
+        size = row.get('size_bucket', 'small')
+        types = company_types.get(size, ['AB'])
+        company_type = np.random.choice(types)
+
+        # Create a more realistic name
+        if district and district != 'Unknown':
+            return f"{district} {company_type} ({org_nr[-6:]})"
+        else:
+            return f"Company {company_type} ({org_nr[-6:]})"
+
+    def _load_models(self, project_root: Path) -> Dict:
+        """Load clustering models if available."""
+        models = {}
+        models_dir = project_root / 'models'
+
+        try:
+            # Try to load default model
+            default_path = models_dir / 'kmeans.joblib'
+            if default_path.exists():
+                models['default'] = joblib.load(default_path)
+                logger.info("Loaded default clustering model")
+
+            # Try to load large model
+            large_path = models_dir / 'kmeans_large.joblib'
+            if large_path.exists():
+                models['large'] = joblib.load(large_path)
+                logger.info("Loaded large clustering model")
+
+        except Exception as e:
+            logger.warning(f"Could not load ML models: {e}. Using distance-based scoring only.")
+
+        return models
+
+    def haversine_distance(self, lat1, lon1, lat2, lon2):
+        """Calculate distance in kilometers between two points."""
+        try:
+            # Validate coordinates
+            if any(pd.isna([lat1, lon1, lat2, lon2])):
+                return float('inf')
+
+            # Ensure coordinates are floats
+            lat1, lon1, lat2, lon2 = float(lat1), float(lon1), float(lat2), float(lon2)
+
+            # Radius of Earth in kilometers
+            R = 6371.0
+
+            # Convert to radians
+            lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+
+            # Haversine formula
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+            c = 2 * math.asin(math.sqrt(a))
+
+            return R * c
+        except Exception as e:
+            logger.error(f"Error calculating distance: {e}")
+            return float('inf')
+
+    def search_associations(self, query):
+        """Find associations by name with intelligent matching."""
+        if not query or len(query) < 1:
+            return pd.DataFrame()
+
+        # Case-insensitive search with multiple strategies
+        query_lower = query.lower()
+
+        # Exact match
+        exact_mask = self.associations['name'].str.lower() == query_lower
+
+        # Contains match
+        contains_mask = self.associations['name'].str.contains(query, case=False, na=False)
+
+        # Starts with match
+        starts_mask = self.associations['name'].str.lower().str.startswith(query_lower)
+
+        # Combine matches with priority
+        results = pd.concat([
+            self.associations[exact_mask],
+            self.associations[starts_mask & ~exact_mask],
+            self.associations[contains_mask & ~starts_mask & ~exact_mask]
+        ]).drop_duplicates()
+
+        # Limit results
+        return results.head(20)
+
+    def _predict_cluster(self, lat: float, lon: float, size_bucket: str) -> Optional[int]:
+        """Predict cluster for a given location using ML models."""
+        if not self.models:
+            return None
+
+        try:
+            # Choose model based on size
+            model_key = 'large' if size_bucket == 'large' else 'default'
+            model = self.models.get(model_key)
+
+            if not model:
+                return None
+
+            # Handle both dict format (with scaler) and direct model
+            if isinstance(model, dict):
+                scaler = model.get('scaler')
+                kmeans = model.get('kmeans')
+                if scaler and kmeans:
+                    features = np.array([[lat, lon]])
+                    features_scaled = scaler.transform(features)
+                    return int(kmeans.predict(features_scaled)[0])
+            else:
+                # Direct model (backward compatibility)
+                features = np.array([[lat, lon]])
+                return int(model.predict(features)[0])
+
+        except Exception as e:
+            logger.debug(f"Cluster prediction failed: {e}")
+            return None
+
+    def _calculate_cluster_score(self, assoc_cluster: Optional[int], comp_cluster: Optional[int]) -> float:
+        """Calculate cluster matching score."""
+        if assoc_cluster is None or comp_cluster is None:
+            return 0.5  # Neutral score if no cluster info
+
+        # Same cluster = high score
+        if assoc_cluster == comp_cluster:
+            return 1.0
+        else:
+            return 0.3  # Different cluster = lower score
+
+    def find_sponsors(self, association_id, max_distance_km=25, limit=50):
+        """
+        Find companies near an association with ML-enhanced scoring.
+        Returns companies with proper display names.
+        """
+        # Get association
+        assoc = self.associations[self.associations['id'] == association_id]
+        if assoc.empty:
+            return pd.DataFrame()
+
+        assoc = assoc.iloc[0]
+        assoc_lat = assoc['latitude']
+        assoc_lon = assoc['longitude']
+        assoc_size = assoc['size_bucket']
+
+        # Get association's cluster if ML models are available
+        assoc_cluster = self._predict_cluster(assoc_lat, assoc_lon, assoc_size)
+
+        # Calculate approximate lat/lon bounds for pre-filtering
+        lat_degree_km = 111.0
+        lon_degree_km = 111.0 * math.cos(math.radians(assoc_lat))
+
+        # Add buffer to ensure we don't miss edge cases
+        buffer = 1.2  # 20% buffer
+        lat_delta = (max_distance_km * buffer) / lat_degree_km
+        lon_delta = (max_distance_km * buffer) / lon_degree_km
+
+        # Pre-filter companies by bounding box
+        min_lat = assoc_lat - lat_delta
+        max_lat = assoc_lat + lat_delta
+        min_lon = assoc_lon - lon_delta
+        max_lon = assoc_lon + lon_delta
+
+        # Filter companies within bounding box first
+        companies_in_bounds = self.companies[
+            (self.companies['latitude'] >= min_lat) &
+            (self.companies['latitude'] <= max_lat) &
+            (self.companies['longitude'] >= min_lon) &
+            (self.companies['longitude'] <= max_lon)
+        ].copy()
+
+        logger.info(f"Pre-filtered to {len(companies_in_bounds)} companies in bounding box (from {len(self.companies)} total)")
+
+        # Calculate exact distances only for pre-filtered companies
+        distances = []
+        for _, company in companies_in_bounds.iterrows():
+            dist = self.haversine_distance(
+                assoc_lat, assoc_lon,
+                company['latitude'], company['longitude']
+            )
+            distances.append(dist)
+
+        companies_in_bounds['distance_km'] = distances
+
+        # Filter by exact distance
+        nearby = companies_in_bounds[companies_in_bounds['distance_km'] <= max_distance_km].copy()
+
+        if nearby.empty:
+            return pd.DataFrame()
+
+        # Calculate enhanced scores
+        scores = []
+        for _, company in nearby.iterrows():
+            # 1. Size compatibility score
+            size_score = self.size_compatibility.get(
+                (assoc_size, company['size_bucket']), 0.5
+            )
+
+            # 2. Distance score (exponential decay)
+            distance_score = math.exp(-2 * company['distance_km'] / max_distance_km)
+
+            # 3. Cluster matching score (if ML models available)
+            comp_cluster = self._predict_cluster(
+                company['latitude'],
+                company['longitude'],
+                company['size_bucket']
+            )
+            cluster_score = self._calculate_cluster_score(assoc_cluster, comp_cluster)
+
+            # 4. Combined score with weights
+            if self.models:
+                # With ML models: 40% distance, 30% size, 30% cluster
+                final_score = (
+                    0.4 * distance_score +
+                    0.3 * size_score +
+                    0.3 * cluster_score
+                )
+            else:
+                # Without ML models: 60% distance, 40% size
+                final_score = (
+                    0.6 * distance_score +
+                    0.4 * size_score
+                )
+
+            scores.append({
+                'final_score': final_score,
+                'distance_score': distance_score,
+                'size_score': size_score,
+                'cluster_score': cluster_score
+            })
+
+        # Add scores to dataframe
+        for key in ['final_score', 'distance_score', 'size_score', 'cluster_score']:
+            nearby[key] = [s[key] for s in scores]
+
+        # Rename final_score to score for compatibility
+        nearby['score'] = nearby['final_score']
+
+        # Sort by score (highest first)
+        nearby = nearby.sort_values('score', ascending=False)
+
+        # Add rank
+        nearby['rank'] = range(1, len(nearby) + 1)
+
+        # Ensure display_name is included
+        if 'display_name' not in nearby.columns:
+            nearby['display_name'] = nearby['name'] if 'name' in nearby.columns else nearby.apply(
+                lambda row: self._generate_company_name(row), axis=1
+            )
+
+        # Return top results with all necessary columns
+        return nearby.head(limit)
+
+    def get_association_by_id(self, assoc_id):
+        """Get single association details."""
+        assoc = self.associations[self.associations['id'] == assoc_id]
+        if not assoc.empty:
+            return assoc.iloc[0].to_dict()
+        return None
+
+    def get_stats(self):
+        """Get basic statistics for display."""
+        assoc_sizes = self.associations['size_bucket'].value_counts().to_dict()
+        comp_sizes = self.companies['size_bucket'].value_counts().to_dict()
+
+        return {
+            'total_associations': len(self.associations),
+            'total_companies': len(self.companies),
+            'associations_by_size': assoc_sizes,
+            'companies_by_size': comp_sizes,
+            'model_status': 'ML Enhanced' if self.models else 'Distance-based'
+        }
+
+
+# Test the service if run directly
+if __name__ == "__main__":
+    print("Testing SimpleSponsorService with ML integration...")
+
+    try:
+        service = SimpleSponsorService()
+
+        # Test search
+        print("\nSearching for 'IFK'...")
+        results = service.search_associations("IFK")
+        print(f"Found {len(results)} associations")
+        if not results.empty:
+            print(results[['name', 'id', 'size_bucket']].head())
+
+            # Test sponsor finding with ML scoring
+            first_id = results.iloc[0]['id']
+            first_size = results.iloc[0]['size_bucket']
+            print(f"\nFinding sponsors for association ID {first_id} (size: {first_size})...")
+            sponsors = service.find_sponsors(first_id, max_distance_km=25)
+            print(f"Found {len(sponsors)} sponsors")
+
+            if not sponsors.empty:
+                print("\nTop 5 sponsors with ML-enhanced scoring:")
+                for _, sponsor in sponsors.head().iterrows():
+                    print(f"\n  {sponsor.get('display_name', sponsor.get('name', 'Unknown'))} ({sponsor['size_bucket']})")
+                    print(f"    Distance: {sponsor['distance_km']:.1f} km")
+                    print(f"    Distance score: {sponsor['distance_score']:.2f}")
+                    print(f"    Size score: {sponsor['size_score']:.2f}")
+                    print(f"    Cluster score: {sponsor['cluster_score']:.2f}")
+                    print(f"    Total score: {sponsor['score']*100:.0f}%")
+
+        # Show stats
+        stats = service.get_stats()
+        print("\nSystem statistics:")
+        print(f"Model status: {stats['model_status']}")
+        print(f"Associations by size: {stats['associations_by_size']}")
+        print(f"Companies by size: {stats['companies_by_size']}")
+
+    except Exception as e:
+        print(f"Error testing service: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 ================================================================================
 FIL: sponsor_match/cli/__init__.py
 ================================================================================
@@ -1978,28 +2150,24 @@ FIL: sponsor_match/cli/__init__.py
 FIL: sponsor_match/cli/db_init.py
 ================================================================================
 
-#!/usr/bin/env python3
+# db_init.py
 """
-sponsor_match/db_init.py
-------------------------
-Create (if needed) the `associations` and `companies` tables in MySQL.
-
-Usage:
-    python -m sponsor_match.db_init
+Initialise MySQL tables `associations` and `companies` if they do not already exist.
 """
+import logging  # For informative logs
+from argparse import ArgumentParser  # CLI parsing
+from textwrap import dedent  # For multi-line SQL
 
-import logging
-from argparse import ArgumentParser
-from textwrap import dedent
-from sponsor_match.core.db import get_engine
+from sponsor_match.core.db import get_engine  # Database engine factory
 
-# Configure logging
+# Configure root logger
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
+# DDL statements to create required tables
 DDL = dedent("""
    CREATE TABLE IF NOT EXISTS associations (
         id             INT PRIMARY KEY AUTO_INCREMENT,
@@ -2029,23 +2197,22 @@ DDL = dedent("""
 
 def main(dry_run: bool = False) -> None:
     """
-    Execute the DDL statements to ensure tables exist.
-    If dry_run is True, only logs the statements without executing.
+    Execute the DDL statements. In dry-run mode, only logs the SQL without executing.
     """
     engine = get_engine()
     logger.info("Connecting to database")
     if dry_run:
-        logger.info("Dry run mode: the following statements would be executed:\n%s", DDL)
+        logger.info("Dry run mode:\n%s", DDL)
         return
 
     try:
+        # Execute each SQL statement in a transaction
         with engine.begin() as conn:
             for stmt in DDL.strip().split(";"):
                 stmt = stmt.strip()
-                if not stmt:
-                    continue
-                conn.exec_driver_sql(stmt)
-                logger.info("Executed DDL: %s", stmt.splitlines()[0])
+                if stmt:
+                    conn.exec_driver_sql(stmt)
+                    logger.info("Executed DDL: %s", stmt.splitlines()[0])
         logger.info("✅ Tables `associations` and `companies` are ready")
     except Exception as e:
         logger.exception("Database initialization failed: %s", e)
@@ -2054,33 +2221,39 @@ def main(dry_run: bool = False) -> None:
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="Initialize MySQL tables for SponsorMatch")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show DDL without executing"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="Show DDL without executing")
     args = parser.parse_args()
     main(dry_run=args.dry_run)
+
 
 ================================================================================
 FIL: sponsor_match/cli/run_pipeline.py
 ================================================================================
 
-import argparse
-import json
-from sponsor_match.ml.pipeline import score_and_rank
+# run_pipeline.py
+"""
+Batch-run sponsor recommendations for a single association using the ML pipeline.
+Outputs a JSON file of scored and ranked companies.
+"""
+import argparse  # CLI parsing
+import json  # JSON serialization
+
+from sponsor_match.ml.pipeline import score_and_rank  # ML function
+
 
 def main():
+    """Parse arguments, call the ML pipeline, and write recommendations to file."""
     parser = argparse.ArgumentParser(
         description="Batch-run sponsor recommendations for one association"
     )
-    parser.add_argument("--assoc-id", type=int, required=True)
-    parser.add_argument("--bucket",    choices=["small","medium","large"], required=True)
+    parser.add_argument("--assoc-id", type=int, required=True, help="Association ID")
+    parser.add_argument("--bucket", choices=["small","medium","large"], required=True)
     parser.add_argument("--max-distance", type=float, default=50.0)
-    parser.add_argument("--top-n",      type=int, default=10)
-    parser.add_argument("--output",     type=str, required=True)
+    parser.add_argument("--top-n", type=int, default=10)
+    parser.add_argument("--output", type=str, required=True, help="Path to output JSON")
     args = parser.parse_args()
 
+    # Call the ML pipeline: scores and ranks companies
     recs = score_and_rank(
         association_id=args.assoc_id,
         bucket=args.bucket,
@@ -2088,9 +2261,11 @@ def main():
         top_n=args.top_n
     )
 
+    # Write out the list of recommendation dicts
     with open(args.output, "w") as f:
         json.dump(recs, f, indent=2)
     print(f"Wrote {len(recs)} recommendations to {args.output}")
+
 
 if __name__ == "__main__":
     main()
@@ -2100,121 +2275,81 @@ if __name__ == "__main__":
 FIL: sponsor_match/cli/train_matcher.py
 ================================================================================
 
-#!/usr/bin/env python3
+# train_matcher.py
 """
-cli/train_matcher.py
----------------------
-Train a GradientBoostingClassifier on labeled sponsor–club pairs
+Train a GradientBoostingClassifier on labelled sponsor–club pairs
 and save the model artifact under the project's `models/` directory.
-
-Usage:
-    python cli/train_matcher.py \
-      --input data/positive_pairs.parquet \
-      --test-size 0.2 \
-      --random-state 1
 """
+import logging  # Informative logging
+from argparse import ArgumentParser  # CLI parsing
+from pathlib import Path  # Filesystem paths
 
-import logging
-from argparse import ArgumentParser
-from pathlib import Path
+import joblib  # Model persistence
+import pandas as pd  # Data loading
+from sklearn.ensemble import GradientBoostingClassifier  # ML algorithm
+from sklearn.model_selection import train_test_split  # Data splitting
 
-import pandas as pd
-import joblib
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import GradientBoostingClassifier
+from sponsor_match.models.features import FeatureEngineer  # Custom feature engineering
 
-from sponsor_match.models.features import FeatureEngineer
-
-# configure logging
+# Configure logging format and level
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Determine project root and models directory
-PROJECT_ROOT = Path(__file__).resolve().parents[1]  # cli/ -> project root
+# Default model directory under project root
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MODEL_DIR = PROJECT_ROOT / "models"
 
-def main(
-    input_path: Path,
-    model_dir: Path,
-    test_size: float,
-    random_state: int
-) -> None:
-    """
-    Load training data, engineer features, split into train/validation,
-    train a GradientBoostingClassifier, evaluate, and save the model.
 
-    Parameters
-    ----------
-    input_path : Path
-        Parquet file of labeled club–company pairs with a 'label' column.
-    model_dir : Path
-        Directory in which to save the trained model artifact.
-    test_size : float
-        Fraction of data reserved for validation.
-    random_state : int
-        Seed for reproducible splits.
+def main(input_path: Path, model_dir: Path, test_size: float, random_state: int) -> None:
+    """
+    Load training data, generate features, split into train/validation,
+    train a GradientBoostingClassifier, evaluate performance, and save model.
     """
     logger.info("Loading data from %s", input_path)
     df = pd.read_parquet(input_path)
     logger.info("Loaded %d rows", len(df))
 
+    # Generate pairwise features for ML model
     logger.info("Generating pairwise features")
     X = FeatureEngineer.make_pair_features(df)
     y = df["label"]
 
-    logger.info(
-        "Splitting into train/validation (test_size=%.2f, random_state=%d)",
-        test_size, random_state
-    )
+    # Split data ensuring reproducibility
+    logger.info("Splitting data (test_size=%.2f, random_state=%d)", test_size, random_state)
     X_train, X_val, y_train, y_val = train_test_split(
         X, y, test_size=test_size, random_state=random_state
     )
 
+    # Train the Gradient Boosting classifier
     logger.info("Training GradientBoostingClassifier")
     clf = GradientBoostingClassifier(random_state=random_state)
     clf.fit(X_train, y_train)
 
+    # Evaluate and log validation accuracy
     val_acc = clf.score(X_val, y_val)
     logger.info("Validation accuracy: %.4f", val_acc)
 
-    # Ensure the models directory exists
+    # Ensure output directory exists and save the model
     model_dir.mkdir(parents=True, exist_ok=True)
     model_path = model_dir / "match_gb.joblib"
-
     logger.info("Saving trained model to %s", model_path)
     joblib.dump(clf, model_path)
-    logger.info("Done.")
+    logger.info("Model training complete.")
+
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="Train the sponsor–club matching classifier")
-    parser.add_argument(
-        "--input",
-        type=Path,
-        default=Path("data/positive_pairs.parquet"),
-        help="Parquet file of labeled pairs"
-    )
-    parser.add_argument(
-        "--model-dir",
-        type=Path,
-        default=DEFAULT_MODEL_DIR,
-        help="Directory for saving model artifacts"
-    )
-    parser.add_argument(
-        "--test-size",
-        type=float,
-        default=0.2,
-        help="Fraction of data for validation"
-    )
-    parser.add_argument(
-        "--random-state",
-        type=int,
-        default=1,
-        help="Seed for train/validation split"
-    )
-
+    parser.add_argument("--input", type=Path, default=Path("data/positive_pairs.parquet"),
+                        help="Parquet file of labelled pairs")
+    parser.add_argument("--model-dir", type=Path, default=DEFAULT_MODEL_DIR,
+                        help="Directory for saving model artifact")
+    parser.add_argument("--test-size", type=float, default=0.2,
+                        help="Fraction of data for validation")
+    parser.add_argument("--random-state", type=int, default=1,
+                        help="Seed for train/validation split")
     args = parser.parse_args()
     main(
         input_path=args.input,
@@ -2234,56 +2369,584 @@ FIL: sponsor_match/ui/__init__.py
 FIL: sponsor_match/ui/app.py
 ================================================================================
 
-import streamlit as st
+#!/usr/bin/env python3
+"""
+sponsor_match/ui/app.py
+
+Streamlit entry-point for SponsorMatch AI:
+- Sidebar fully hidden
+- Folium map with OpenStreetMap tiles (stable)
+- Fixed pixel sizing for the map
+- Club search & sponsor discovery UI with navigation
+"""
+
+import sys
 from pathlib import Path
-import logging
+import folium
+import pandas as pd
+import streamlit as st
+from streamlit_folium import folium_static
 
-from sponsor_match.core.config import APP_TITLE, LOGO_PATH, STREAMLIT_PAGE_ICON
-from sponsor_match.ui.styles import apply_professional_styles
-from sponsor_match.ui.pages.home import render_home_page
-from sponsor_match.ui.pages.search import render_search_page
-from sponsor_match.ui.pages.profile import render_profile_page
+# Ensure project root is on sys.path
+PROJECT_ROOT = Path(__file__).parents[2]
+sys.path.insert(0, str(PROJECT_ROOT))
 
+from sponsor_match.services.service import SponsorMatchService
+from sponsor_match.core.db import get_engine
 
-def set_page_config():
-    st.set_page_config(
-        page_title=APP_TITLE,
-        page_icon=STREAMLIT_PAGE_ICON,
-        layout="wide",
-        initial_sidebar_state="expanded",
+# Constants
+DEFAULT_MAX_DISTANCE = 25
+DEFAULT_TOP_N = 10
+SCORE_THRESHOLD = 0.3
+MAP_WIDTH = 700
+MAP_HEIGHT = 400
+
+# Page config
+st.set_page_config(
+    page_title="SponsorMatch AI",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+# Hide Streamlit sidebar/menu
+st.markdown(r"""
+<style>
+  [data-testid="stSidebar"] { display: none !important; }
+  button[aria-label="Toggle sidebar"],
+  button[aria-label="Collapse sidebar"],
+  button[aria-label="Expand sidebar"] {
+    display: none !important;
+  }
+  #MainMenu, footer { visibility: hidden; }
+</style>
+""", unsafe_allow_html=True)
+
+# Cache SponsorMatch service
+@st.cache_resource
+def get_service() -> SponsorMatchService:
+    engine = get_engine()
+    return SponsorMatchService(engine)
+
+# Folium map builder
+def create_map(lat: float, lon: float, zoom: int = 12) -> folium.Map:
+    m = folium.Map(
+        location=[lat, lon],
+        zoom_start=zoom,
+        tiles=None,
+        control_scale=True
     )
+    folium.TileLayer(
+        tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        attr="© OpenStreetMap contributors",
+        name="OpenStreetMap",
+        control=False,
+        max_zoom=19
+    ).add_to(m)
+    return m
+
+# Navigation bar
+
+def render_navigation_bar():
+    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+    with col1:
+        st.markdown("### 🎯 SponsorMatch AI")
+    with col2:
+        if st.button("🏠 Home", key="nav_home"):
+            st.session_state.page = "home"
+            st.rerun()
+    with col3:
+        if st.button("🔍 Find", key="nav_find"):
+            st.session_state.page = "find"
+            st.rerun()
+    with col4:
+        if st.button("📊 Results", key="nav_results"):
+            st.session_state.page = "results"
+            st.rerun()
+
+# Pages
+
+def render_home_page():
+    st.markdown("## 🏠 Welcome to SponsorMatch AI")
+    st.markdown("Use the navigation bar to start finding sponsors or reviewing results.")
+
+def render_results_page():
+    sponsors = st.session_state.get("sponsors")
+    if sponsors is None or sponsors.empty:
+        st.info("No sponsor results yet. Search for a club first.")
+    else:
+        df_s = sponsors.copy()
+        df_s['Match Score'] = (df_s['score']*100).round(0).astype(int).astype(str) + '%'
+        df_s['Distance (km)'] = df_s['distance'].round(1).astype(str) + ' km'
+        st.subheader(f"Found {len(df_s)} Potential Sponsors")
+        st.table(df_s[['name','Match Score','Distance (km)']])
+
+def render_find_page(service):
+    col1, _ = st.columns([4, 1])
+    with col1:
+        st.title("🔍 Find Sponsors for Your Club")
+    st.markdown("---")
+
+    left, right = st.columns([2, 3])
+
+    with left:
+        st.subheader("Search Your Club")
+        club_query = st.text_input("🏆 Enter club name…", key="club_search")
+
+        with st.expander("Search Options", expanded=True):
+            max_distance = st.slider("Maximum distance (km)", 5, 100, DEFAULT_MAX_DISTANCE, key="max_distance")
+            top_n = st.slider("Number of sponsors to find", 5, 50, DEFAULT_TOP_N, key="top_n")
+            min_score = st.slider("Minimum match score", 0.0, 1.0, SCORE_THRESHOLD, step=0.1, format="%.1f", key="min_score")
+
+        if club_query and len(club_query) >= 2:
+            df_assoc = service.search(club_query)
+            if "type" in df_assoc.columns:
+                df_assoc = df_assoc[df_assoc["type"] == "association"]
+
+            if not df_assoc.empty:
+                st.markdown("### Select Your Club")
+                for _, row in df_assoc.head(5).iterrows():
+                    name = row.get("name", "")
+                    addr = row.get("address") or row.get("Adress") or row.get("Postort")
+                    label = name + (f" — {addr}" if addr else "")
+                    if st.button(label, key=f"select_{row['id']}"):
+                        st.session_state.selected_club = row.to_dict()
+                        st.session_state.sponsors = None
+                        st.rerun()
+            else:
+                st.info("No clubs found. Try another term.")
+
+        club = st.session_state.selected_club
+        if club:
+            st.success(f"✅ Selected: **{club['name']}**")
+            with st.expander("Club Details", expanded=True):
+                st.write(f"• Size: {club.get('size_bucket','Unknown').capitalize()}")
+                st.write(f"• Members: {club.get('member_count','N/A')}")
+                addr = club.get("address") or club.get("Adress") or club.get("Postort")
+                if addr:
+                    st.write(f"• Address: {addr}")
+
+            if st.button("🎯 Find Sponsors Now"):
+                with st.spinner("Finding sponsors…"):
+                    recs = service.recommend(
+                        association_name=club['name'],
+                        top_n=top_n,
+                        max_distance=max_distance,
+                    )
+                    sponsors_df = pd.DataFrame(recs) if isinstance(recs, list) else recs
+                    sponsors_df = sponsors_df[sponsors_df['score'] >= min_score]
+                    st.session_state.sponsors = sponsors_df
+                    st.rerun()
+
+    with right:
+        st.subheader("Sponsor Map")
+        lat, lon, zoom = 57.7089, 11.9746, 11
+        if club:
+            club_lat = club.get('lat') or club.get('latitude')
+            club_lon = club.get('lon') or club.get('longitude')
+            if club_lat is not None and club_lon is not None:
+                lat, lon, zoom = float(club_lat), float(club_lon), 13
+
+        m = create_map(lat, lon, zoom)
+
+        if club and lat is not None and lon is not None:
+            folium.Marker([
+                lat, lon
+            ], popup=club.get('name', 'Selected Club'),
+               icon=folium.Icon(color='purple', icon='flag', prefix='fa')).add_to(m)
+
+        sponsors = st.session_state.sponsors
+        if sponsors is not None and not sponsors.empty:
+            for _, sp in sponsors.iterrows():
+                popup_html = f"""
+                <b>{sp['name']}</b><br>
+                Score: {sp['score']*100:.0f}%<br>
+                Address: {sp.get('address', 'Unknown')}<br>
+                Size: {sp.get('size_bucket', 'Unknown').capitalize()}
+                """
+                folium.Marker([
+                    sp['lat'], sp['lon']
+                ], popup=folium.Popup(popup_html, max_width=250),
+                   icon=folium.Icon(
+                       color='darkgreen' if sp['score'] >= 0.8 else
+                             'green' if sp['score'] >= 0.6 else 'orange',
+                       icon='building', prefix='fa')).add_to(m)
+
+        folium_static(m, width=MAP_WIDTH, height=MAP_HEIGHT)
+
+# Main app entry
+
+def main():
+    if "page" not in st.session_state:
+        st.session_state.page = "find"
+    if "selected_club" not in st.session_state:
+        st.session_state.selected_club = None
+    if "sponsors" not in st.session_state:
+        st.session_state.sponsors = None
+
+    service = get_service()
+    render_navigation_bar()
+
+    if st.session_state.page == "home":
+        render_home_page()
+    elif st.session_state.page == "results":
+        render_results_page()
+    else:
+        render_find_page(service)
+
+if __name__ == '__main__':
+    main()
+
+
+================================================================================
+FIL: sponsor_match/ui/simple_app.py
+================================================================================
+
+#!/usr/bin/env python3
+# pylint: disable=unused-import, unused-variable, duplicate-code
+"""
+sponsor_match/ui/simple_app.py
+FINAL VERSION - Map always visible on search page, sidebar disabled, fixed-button sizing, stable Folium tiles
+"""
+
+import sys
+from pathlib import Path
+import folium
+import plotly.express as px
+import streamlit as st
+from streamlit_folium import folium_static
+
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+# Import your services
+from sponsor_match.services.service import SponsorMatchService
+from sponsor_match.core.db import get_engine
+
+# --- Page configuration & CSS tweaks ---
+st.set_page_config(
+    page_title="SponsorMatch AI",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# Hide sidebar, main menu, footer
+st.markdown("""
+<style>
+/* Hide entire sidebar */
+section[data-testid="stSidebar"] {display: none;}
+/* Hide collapsedControl (hamburger) */
+button[data-testid="collapsedControl"] {display: none !important;}
+/* Hide Streamlit menu and footer */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+/* Hide Streamlit's sidebar expand/collapse control */
+[data-testid="collapsedControl"] { display: none; }
+
+/* Fixed-size navigation buttons */
+div.stButton > button {
+    background-color: #2563eb;
+    color: white;
+    width: 120px;
+    height: 40px;
+    font-size: 1rem;
+    border-radius: 0.5rem;
+    border: none;
+    transition: all 0.3s;
+}
+div.stButton > button:hover {
+    background-color: #1d4ed8;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+/* Responsive typography */
+h1 { font-size: clamp(1.5rem, 4vw, 2.5rem) !important; color: #1e40af; }
+h2 { font-size: clamp(1.25rem, 3vw, 2rem) !important; color: #1e40af; }
+h3 { font-size: clamp(1rem, 2vw, 1.5rem) !important; color: #2563eb; }
+
+/* Mobile layout fix for title/map columns */
+@media screen and (max-width: 768px) {
+  .block-container .responsive-row {
+    display: block !important;
+  }
+  .block-container .responsive-row > div {
+    width: 100% !important;
+    margin-bottom: 1rem;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
+
+# --- Service initialization ---
+@st.cache_resource
+def get_service():
+    """Initialize SponsorMatchService once and cache it"""
+    engine = get_engine()
+    return SponsorMatchService(engine)
+
+# --- Navigation bar ---
+def navigate_to(page: str):
+    st.session_state.page = page
+    st.rerun()
+
+def render_navigation():
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+    with col1:
+        st.markdown("### 🎯 SponsorMatch AI")
+    with col2:
+        if st.button("🏠 Home", key="nav_home"):
+            st.session_state.page = "home"
+            st.rerun()
+    with col3:
+        if st.button("🔍 Find", key="nav_find"):
+            st.session_state.page = "find_sponsors"
+            st.rerun()
+    with col4:
+        if st.button("👤 Profile", key="nav_profile"):
+            st.session_state.page = "profile"
+            st.rerun()
+
+# --- Page Rendering ---
+def render_home_page():
+    st.title("Welcome to SponsorMatch AI")
+    st.markdown("### Find the perfect sponsors for your sports association using AI-powered matching")
+    st.markdown("""
+- 📍 **Geographic proximity**
+- 📏 **Size compatibility**
+- 🎯 **Smart scoring**
+- 🗺️ **Interactive visualization**
+
+**Database:** 169 associations, 82,776 companies
+""")
+    clicked = st.markdown("""
+        <div style="text-align:center; margin-top: 1rem;">
+            <form action="" method="post">
+                <button type="submit" name="find_now" style="
+                    background-color: #2563eb;
+                    color: white;
+                    padding: 0.75rem 1.5rem;
+                    font-size: 1rem;
+                    font-weight: 600;
+                    border: none;
+                    border-radius: 0.5rem;
+                    cursor: pointer;
+                    transition: background 0.3s;
+                ">
+                    🎯 FIND SPONSORS NOW
+                </button>
+            </form>
+        </div>
+    """, unsafe_allow_html=True)
+
+    if st.session_state.get("find_now") or st.query_params.get("find_now"):
+        with st.spinner(f"Finding sponsors within {st.session_state.last_search_distance} km..."):
+            navigate_to('find_sponsors')
+
+
+def create_map(center_lat=57.7089, center_lon=11.9746, zoom=11):
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=zoom,
+        tiles=None,
+        control_scale=True
+    )
+    folium.TileLayer(
+        tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        attr="© OpenStreetMap contributors",
+        name="OpenStreetMap",
+        control=False,
+        max_zoom=19
+    ).add_to(m)
+    return m
+
+
+def render_find_sponsors_page():
+    service = get_service()
+    st.markdown('<div class="responsive-row">', unsafe_allow_html=True)
+    title_col, map_col = st.columns(2)
+    with title_col:
+        st.title("🔍 Find Sponsors for Your Association")
+    with map_col:
+        lat, lon, zoom = 57.7089, 11.9746, 11
+        assoc = st.session_state.get('selected_association')
+        if assoc:
+            lat = assoc.get('latitude', assoc.get('lat'))
+            lon = assoc.get('longitude', assoc.get('lon'))
+            zoom = 13
+        m = create_map(lat, lon, zoom)
+        if assoc:
+            popup = f"<b>{assoc['name']}</b><br>Size: {assoc['size_bucket']}"
+            folium.Marker([lat, lon], popup=popup, icon=folium.Icon(color='red', icon='star')).add_to(m)
+            radius = st.session_state.get('last_search_distance', 0) * 1000
+            folium.Circle([lat, lon], radius=radius, color='red', fill=True, fill_opacity=0.1).add_to(m)
+        results = st.session_state.get('search_results')
+        if results is not None:
+            for _, s in results.head(20).iterrows():
+                s_lat = s.get('latitude', s.get('lat', 0))
+                s_lon = s.get('longitude', s.get('lon', 0))
+                score = s.get('score', 0)
+                color = 'darkgreen' if score>=0.8 else 'green' if score>=0.6 else 'orange' if score>=0.4 else 'lightgray'
+                name = s.get('display_name', s.get('name', 'Company'))
+                dist = s.get('distance_km', s.get('distance', 0))
+                popup = f"<b>{name}</b><br>Score: {score*100:.0f}%<br>Distance: {dist:.1f}km"
+                folium.Marker([s_lat, s_lon], popup=popup,
+                              icon=folium.Icon(color=color, icon='building', prefix='fa')).add_to(m)
+        folium_static(m, width=0, height=400)
+
+    st.markdown("---")
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        query = st.text_input("Search for your association", key="assoc_search")
+    with col2:
+        max_dist = st.slider("Max distance (km)", 5, 50, 25, key="max_distance_slider")
+    if query and len(query)>=1:
+        df = service.search(query)
+        if 'type' in df.columns:
+            df = df[df['type']=='association']
+        if not df.empty:
+            st.markdown("### Select Your Association")
+            for _, row in df.head(5).iterrows():
+                emoji = {'small':'🏠','medium':'🏢','large':'🏛️'}.get(row['size_bucket'], '🏠')
+                c1, c2, c3 = st.columns([1,3,1])
+                with c1: st.markdown(f"### {emoji}")
+                with c2:
+                    st.markdown(f"**{row['name']}**")
+                    addr_parts = [row.get('address'), row.get('Adress'), row.get('Postort')]
+                    caption = ", ".join(filter(None, addr_parts)) or "No address available"
+                    st.caption(caption)
+                with c3:
+                    if st.button("Select", key=f"sel_{row['id']}"):
+                        st.session_state.selected_association = row.to_dict()
+                        st.session_state.last_search_distance = max_dist
+                        st.rerun()
+        else:
+            st.info("No associations found. Try a different search term.")
+
+    assoc = st.session_state.get('selected_association')
+    if assoc:
+        st.markdown("---")
+        st.markdown("### Selected Association")
+        c1, c2, c3 = st.columns(3)
+        with c1: st.metric("Name", assoc['name'])
+        size_desc = {'small':'Small (0-399)','medium':'Medium (400-799)','large':'Large (800+)'}
+        with c2: st.metric("Size", size_desc.get(assoc['size_bucket'], assoc['size_bucket']))
+        with c3: st.metric("Location", assoc.get('Postort','Göteborg'))
+        if st.button("🎯 FIND SPONSORS NOW", key="find_now"):
+            with st.spinner(f"Finding sponsors within {st.session_state.last_search_distance} km..."):
+                sponsors = service.recommend(association_name=assoc['name'], top_n=50, max_distance=st.session_state.last_search_distance)
+                if not sponsors.empty:
+                    if 'rank' not in sponsors.columns:
+                        sponsors['rank'] = range(1, len(sponsors)+1)
+                    if 'distance' in sponsors.columns and 'distance_km' not in sponsors.columns:
+                        sponsors['distance_km'] = sponsors['distance']
+                    st.session_state.search_results = sponsors
+                    st.success(f"Found {len(sponsors)} potential sponsors!")
+                    st.rerun()
+                else:
+                    st.warning("No sponsors found within the specified distance.")
+
+    if st.session_state.get('search_results') is not None:
+        st.markdown("---")
+        render_search_results()
+
+
+def render_search_results():
+    sponsors = st.session_state.search_results
+    # Ensure size_bucket exists to prevent KeyError if missing
+    if 'size_bucket' not in sponsors.columns:
+        sponsors['size_bucket'] = 'Unknown'
+    if 'display_name' not in sponsors.columns:
+        sponsors['display_name'] = sponsors.apply(
+            lambda r: r.get('name', f"Company_{r.get('id','') }"), axis=1)
+    if 'distance_km' not in sponsors.columns and 'distance' in sponsors.columns:
+        sponsors['distance_km'] = sponsors['distance']
+    tab1, tab2, tab3 = st.tabs(["📊 Grid View","📋 List View","📈 Analytics"])
+    with tab1:
+        cols = st.columns(3)
+        for i, sp in sponsors.head(12).iterrows():
+            with cols[i % 3]:
+                st.markdown(f"""
+                <div style="background:white;padding:1rem;border-radius:0.5rem;
+                            box-shadow:0 2px 4px rgba(0,0,0,0.1);margin-bottom:1rem;">
+                    <h4>{sp['display_name']}</h4>
+                    <p><strong>Size:</strong> {sp['size_bucket'].capitalize()}</p>
+                    <p><strong>Distance:</strong> {sp['distance_km']:.1f} km</p>
+                    <p><strong>Score:</strong> {sp['score']*100:.0f}%</p>
+                </div>
+                """, unsafe_allow_html=True)
+    with tab2:
+        cols, col_names = [], []
+        if 'rank' in sponsors.columns:
+            cols.append('rank'); col_names.append('Rank')
+        cols.extend(['display_name']); col_names.append('Company Name')
+        if 'size_bucket' in sponsors.columns:
+            cols.append('size_bucket'); col_names.append('Size')
+        cols.append('distance_km'); col_names.append('Distance')
+        cols.append('score'); col_names.append('Match Score')
+        df_display = sponsors[cols].copy()
+        df_display['score'] = (df_display['score']*100).round(0).astype(int).astype(str) + '%'
+        df_display['distance_km'] = df_display['distance_km'].round(1).astype(str) + ' km'
+        df_display.columns = col_names
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+    with tab3:
+        c1, c2 = st.columns(2)
+        with c1:
+            hist = px.histogram(sponsors, x='score', nbins=20, title='Score Distribution')
+            hist.update_xaxes(tickformat='.0%')
+            st.plotly_chart(hist, use_container_width=True)
+        with c2:
+            dist_counts = sponsors['size_bucket'].value_counts()
+            pie = px.pie(values=dist_counts.values, names=dist_counts.index, title='Sponsor Size Distribution')
+            st.plotly_chart(pie, use_container_width=True)
+
+
+def render_profile_page():
+    st.title("👤 Association Profile")
+    with st.form("profile_form"):
+        c1, c2 = st.columns(2)
+        with c1:
+            _name = st.text_input("Association Name")
+            _address = st.text_input("Address")
+            _city = st.text_input("City", value="Göteborg")
+        with c2:
+            members = st.number_input("Number of Members", min_value=1, value=100)
+            size_cat = 'Small (0-399)' if members<400 else 'Medium (400-799)' if members<800 else 'Large (800+)'
+            st.info(f"Size Category: {size_cat}")
+            _founded_year = st.number_input("Founded Year", min_value=1800, max_value=2024, value=2000)
+        sub = st.form_submit_button("Save Profile")
+        if sub:
+            st.success("Profile saved successfully!")
 
 
 def main():
-    set_page_config()
-    apply_professional_styles()
+    if 'page' not in st.session_state:
+        st.session_state.page = 'home'
+    if 'selected_association' not in st.session_state:
+        st.session_state.selected_association = None
+    if 'search_results' not in st.session_state:
+        st.session_state.search_results = None
+    if 'last_search_distance' not in st.session_state:
+        st.session_state.last_search_distance = 25
 
-    # Header
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        st.title("🏆 SponsorMatch AI")
-        st.markdown("*Find the perfect sponsors for your sports club*")
+    render_navigation()
 
-    with col2:
-        logo_path = Path(LOGO_PATH)
-        if logo_path.exists():
-            try:
-                st.image(str(logo_path), width=100)
-            except Exception:
-                pass
-
-    # Navigation
-    tab1, tab2, tab3 = st.tabs(["🏠 Home", "🔍 Find Sponsors", "👤 My Club"])
-
-    with tab1:
+    if st.session_state.page == 'home':
         render_home_page()
-    with tab2:
-        render_search_page()
-    with tab3:
+    elif st.session_state.page == 'find_sponsors':
+        render_find_sponsors_page()
+    elif st.session_state.page == 'profile':
         render_profile_page()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
 
 

@@ -1,11 +1,20 @@
+# Module to generate realistic sample data for SponsorMatch AI
+# Detailed comments have been inserted in British English.
+
 #!/usr/bin/env python3
 """Generate realistic sample data for SponsorMatch AI."""
 
-import pandas as pd
+# Standard library or third-party import
 import random
-from faker import Faker
-import numpy as np
+# Standard library or third-party import
 from pathlib import Path
+
+# Standard library or third-party import
+import numpy as np
+# Standard library or third-party import
+import pandas as pd
+# Standard library or third-party import
+from faker import Faker
 
 # Set seeds for reproducibility
 random.seed(42)
@@ -14,6 +23,7 @@ fake = Faker()
 Faker.seed(42)
 
 
+# Definition of function 'generate_sample_companies': explains purpose and parameters
 def generate_sample_companies(n=50):
     """Generate realistic Swedish companies."""
     companies = []
@@ -72,6 +82,7 @@ def generate_sample_companies(n=50):
     return pd.DataFrame(companies)
 
 
+# Definition of function 'generate_sample_associations': explains purpose and parameters
 def generate_sample_associations(n=30):
     """Generate realistic Swedish sports associations."""
     associations = []
@@ -117,6 +128,7 @@ def generate_sample_associations(n=30):
     return pd.DataFrame(associations)
 
 
+# Definition of function 'main': explains purpose and parameters
 def main():
     """Generate and save sample data."""
     project_root = Path(__file__).parent.parent
@@ -137,5 +149,6 @@ def main():
     print(f"Data saved to {data_dir}")
 
 
+# Entry point check: script execution starts here when run directly
 if __name__ == "__main__":
     main()

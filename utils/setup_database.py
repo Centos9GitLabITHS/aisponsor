@@ -1,22 +1,32 @@
+# Script to set up database tables and load sample data
+# Detailed comments have been inserted in British English.
+
 #!/usr/bin/env python3
 """
 setup_database.py - Complete database setup for SponsorMatch AI
 Ensures both associations and companies are properly loaded.
 """
 
+# Standard library or third-party import
 import logging
-from pathlib import Path
 
+# Standard library or third-party import
 import pandas as pd
+# Standard library or third-party import
 from sqlalchemy import text
 
+# Standard library or third-party import
 from sponsor_match.core.db import get_engine
+# Standard library or third-party import
 from sponsor_match.models.entities import Base
+
+# Standard library or third-party import
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# Definition of function 'setup_database': explains purpose and parameters
 def setup_database():
     """Set up the complete database with sample data."""
     engine = get_engine()
@@ -35,6 +45,7 @@ def setup_database():
     verify_data(engine)
 
 
+# Definition of function 'load_sample_associations': explains purpose and parameters
 def load_sample_associations(engine):
     """Load sample associations with realistic Gothenburg data."""
     associations = [
@@ -81,6 +92,7 @@ def load_sample_associations(engine):
     logger.info(f"Loaded {len(df)} associations")
 
 
+# Definition of function 'load_sample_companies': explains purpose and parameters
 def load_sample_companies(engine):
     """Load sample companies in Gothenburg area."""
     companies = []
@@ -136,6 +148,7 @@ def load_sample_companies(engine):
     ])
 
     # Add more companies spread around Gothenburg
+# Standard library or third-party import
     import random
     for i in range(20):
         lat = 57.65 + random.uniform(0, 0.1)
@@ -168,6 +181,7 @@ def load_sample_companies(engine):
     logger.info(f"Loaded {len(df)} companies")
 
 
+# Definition of function 'verify_data': explains purpose and parameters
 def verify_data(engine):
     """Verify the loaded data."""
     with engine.connect() as conn:
@@ -200,5 +214,6 @@ def verify_data(engine):
             logger.info(f"  {industry}: {count} companies")
 
 
+# Entry point check: script execution starts here when run directly
 if __name__ == "__main__":
     setup_database()

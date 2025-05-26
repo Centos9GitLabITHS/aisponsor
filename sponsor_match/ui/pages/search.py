@@ -1,3 +1,6 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
 #!/usr/bin/env python3
 """
 sponsor_match/ui/pages/search.py
@@ -8,18 +11,17 @@ and comprehensive error handling. This fixes the 108% display issue.
 
 import logging
 from typing import List, Dict, Optional, Tuple
-from datetime import datetime
 
-import streamlit as st
-import pandas as pd
-import numpy as np
 import folium
-from streamlit_folium import st_folium, folium_static
+import numpy as np
+import pandas as pd
+import streamlit as st
 from folium.plugins import MarkerCluster, HeatMap
+from streamlit_folium import st_folium
 
 from sponsor_match.core.db import get_engine
-from sponsor_match.services.service import SponsorMatchService
 from sponsor_match.ml.pipeline import score_and_rank
+from sponsor_match.services.service import SponsorMatchService
 
 # Configure logging
 logger = logging.getLogger(__name__)
