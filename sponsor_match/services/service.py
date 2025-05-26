@@ -82,6 +82,7 @@ class SponsorMatchService:
         assoc_files = [
             "associations_geocoded.csv",
             "associations_prepared.csv",
+            "associations_geocoded_prepared.csv",
             "gothenburg_associations.csv",
             "sample_associations.csv"
         ]
@@ -91,14 +92,46 @@ class SponsorMatchService:
             if filepath.exists():
                 try:
                     self.associations_df = pd.read_csv(filepath)
-                    # Ensure required columns
-                    if 'latitude' in self.associations_df.columns and 'lat' not in self.associations_df.columns:
-                        self.associations_df['lat'] = self.associations_df['latitude']
-                    if 'longitude' in self.associations_df.columns and 'lon' not in self.associations_df.columns:
-                        self.associations_df['lon'] = self.associations_df['longitude']
+
+                    # Standardize column names
+                    column_mapping = {
+                        'Föreningsnamn': 'name',
+                        'Association Name': 'name',
+                        'latitude': 'lat',
+                        'longitude': 'lon',
+                        'Latitude': 'lat',
+                        'Longitude': 'lon',
+                        'Adress': 'address',
+                        'Address': 'address',
+                        'Medlemsantal': 'member_count',
+                        'Member Count': 'member_count',
+                        'Members': 'member_count'
+                    }
+
+                    # Rename columns if they exist
+                    for old_name, new_name in column_mapping.items():
+                        if old_name in self.associations_df.columns:
+                            self.associations_df.rename(columns={old_name: new_name}, inplace=True)
+
+                    # Ensure required columns exist
                     if 'id' not in self.associations_df.columns:
                         self.associations_df['id'] = range(1, len(self.associations_df) + 1)
+
+                    if 'size_bucket' not in self.associations_df.columns:
+                        # Determine size bucket based on member count
+                        if 'member_count' in self.associations_df.columns:
+                            self.associations_df['size_bucket'] = self.associations_df['member_count'].apply(
+                                lambda x: 'small' if x < 400 else 'medium' if x < 800 else 'large'
+                            )
+                        else:
+                            self.associations_df['size_bucket'] = 'medium'
+
+                    # Fill missing addresses
+                    if 'address' not in self.associations_df.columns:
+                        self.associations_df['address'] = ''
+
                     logger.info(f"Loaded {len(self.associations_df)} associations from {filename}")
+                    logger.info(f"Columns: {list(self.associations_df.columns)}")
                     break
                 except Exception as e:
                     logger.error(f"Failed to load {filename}: {e}")
@@ -107,6 +140,7 @@ class SponsorMatchService:
         company_files = [
             "companies_prepared.csv",
             "municipality_of_goteborg.csv",
+            "companies_geocoded.csv",
             "sample_companies.csv"
         ]
 
@@ -115,14 +149,36 @@ class SponsorMatchService:
             if filepath.exists():
                 try:
                     self.companies_df = pd.read_csv(filepath)
+
+                    # Standardize column names
+                    column_mapping = {
+                        'latitude': 'lat',
+                        'longitude': 'lon',
+                        'Latitude': 'lat',
+                        'Longitude': 'lon',
+                        'Företagsnamn': 'name',
+                        'Company Name': 'name',
+                        'Bransch': 'industry',
+                        'Industry': 'industry'
+                    }
+
+                    # Rename columns if they exist
+                    for old_name, new_name in column_mapping.items():
+                        if old_name in self.companies_df.columns:
+                            self.companies_df.rename(columns={old_name: new_name}, inplace=True)
+
                     # Ensure required columns
-                    if 'latitude' in self.companies_df.columns and 'lat' not in self.companies_df.columns:
-                        self.companies_df['lat'] = self.companies_df['latitude']
-                    if 'longitude' in self.companies_df.columns and 'lon' not in self.companies_df.columns:
-                        self.companies_df['lon'] = self.companies_df['longitude']
                     if 'id' not in self.companies_df.columns:
                         self.companies_df['id'] = range(1, len(self.companies_df) + 1)
+
+                    if 'size_bucket' not in self.companies_df.columns:
+                        self.companies_df['size_bucket'] = 'medium'
+
+                    if 'industry' not in self.companies_df.columns:
+                        self.companies_df['industry'] = 'Other'
+
                     logger.info(f"Loaded {len(self.companies_df)} companies from {filename}")
+                    logger.info(f"Columns: {list(self.companies_df.columns)}")
                     break
                 except Exception as e:
                     logger.error(f"Failed to load {filename}: {e}")
