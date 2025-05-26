@@ -1,3 +1,6 @@
+# Utility to verify database connectivity and inspect tables
+# Detailed comments have been inserted in British English.
+
 #!/usr/bin/env python3
 """
 utils/check_db.py
@@ -5,12 +8,21 @@ utils/check_db.py
 Utility to verify database connectivity and inspect tables.
 """
 
+# Standard library or third-party import
 import logging
+# Standard library or third-party import
 import sys
+
+# Standard library or third-party import
 from dotenv import load_dotenv
+# Standard library or third-party import
 from sqlalchemy import inspect
+
+# Standard library or third-party import
 from sponsor_match.core.db import get_engine
 
+
+# Definition of function 'main': explains purpose and parameters
 def main():
     # Load environment variables (e.g. DATABASE_URL)
     load_dotenv()
@@ -47,5 +59,6 @@ def main():
         except Exception as e:
             logging.error(f"Error querying table '{table}': {e}")
 
+# Entry point check: script execution starts here when run directly
 if __name__ == "__main__":
     main()

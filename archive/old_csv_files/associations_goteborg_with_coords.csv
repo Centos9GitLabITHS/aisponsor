@@ -1,0 +1,11 @@
+id,name,member_count,address,lat,lon,size_bucket
+1,IFK Göteborg,6125,"Ullevigatan 5, 411 40 Göteborg",57.7071347,11.9783278,large
+2,BK Häcken,4000,"Gustaf Dalénsgatan 2, 417 05 Göteborg",57.721049,11.9447139,large
+3,GAIS,3100,"Ullevigatan 5, 411 40 Göteborg",57.7071347,11.9783278,large
+4,Örgryte IS,4000,"Gamla Ullevi, Göteborg",57.706261,11.9801228,large
+5,Västra Frölunda IF,2000,"Ruddalavägen 50, 426 55 Västra Frölunda",57.6569983,11.911899,large
+6,Qviding FIF,1500,"Härlanda Park, 416 78 Göteborg",57.7173308,12.0171999,large
+7,Utsiktens BK,1200,"Ruddalens IP, Västra Frölunda",57.6643519,11.9093116,large
+8,Lundby IF,1000,"Länsmansgårdens IP, Göteborg",57.7072326,11.9670171,large
+9,Gunnilse IS,1200,"Hjällbovallen, Angered",57.7970147,12.0495271,large
+10,Göteborgs FF,800,"Majvallen, Kungsladugård",57.6818734,11.928201,large

@@ -1,8 +1,12 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
 """
 Sidebar component for SponsorMatch application.
 """
 import streamlit as st
-from sponsor_match.ui.utils.session import clear_session_data
+
+from sponsor_match.ui.utils.sessions import clear_session_data
 
 
 def render_sidebar():

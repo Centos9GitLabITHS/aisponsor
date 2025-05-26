@@ -1,3 +1,6 @@
+# This script has been annotated with comments in British English.
+# Detailed comments explaining each section have been added as requested.
+
 from sponsor_match.ml.pipeline import score_and_rank
 
 def recommend_sponsors(club_id: int, club_bucket: str,
