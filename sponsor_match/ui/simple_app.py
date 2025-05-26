@@ -19,7 +19,6 @@ sys.path.insert(0, str(project_root))
 
 # Import the service and database engine
 from sponsor_match.services.service import SponsorMatchService
-from sponsor_match.core.db import get_engine
 
 # Page configuration
 st.set_page_config(
@@ -71,8 +70,8 @@ h3 { font-size: clamp(1rem, 2vw, 1.5rem) !important; color: #2563eb; }
 @st.cache_resource
 def get_service():
     """Initialize SponsorMatchService once."""
-    engine = get_engine()
-    return SponsorMatchService(engine)
+    # For Streamlit Cloud, pass None to use CSV mode
+    return SponsorMatchService(None)
 
 
 # Navigation helpers
