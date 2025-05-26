@@ -8,21 +8,20 @@ FINAL VERSION - Streamlit UI for Golden Goal.
 import sys
 from pathlib import Path
 
+# Fix imports for both local and Streamlit Cloud
+current_file = Path(__file__).resolve()
+# Go up to project root (3 levels up from golden_goal/ui/simple_app.py)
+project_root = current_file.parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 import folium
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from streamlit_folium import st_folium
 
-# Add parent directory to path for imports
-# Since we're running from golden_goal directory, we need to add parent
-current_file = Path(__file__).resolve()
-golden_goal_dir = current_file.parent.parent  # This gets us to golden_goal directory
-sys.path.insert(0, str(golden_goal_dir))
-
 # Import the service - use the correct import path
 from golden_goal.services.service import GoldenGoalService
-
 # Page configuration
 st.set_page_config(
     page_title="Golden Goal",
