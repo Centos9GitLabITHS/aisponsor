@@ -11,7 +11,7 @@ import pandas as pd  # Data loading
 from dotenv import load_dotenv  # Load environment credentials
 from sqlalchemy.exc import SQLAlchemyError  # Database error handling
 
-from sponsor_match.core.db import get_engine  # Obtain SQLAlchemy engine
+from golden_goal.core.db import get_engine  # Obtain SQLAlchemy engine
 
 
 def init_logging():

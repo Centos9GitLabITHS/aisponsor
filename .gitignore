@@ -65,5 +65,7 @@ htmlcov/
 
 # Project specific
 utils_output/
-test_sponsor_match.py
-fix_all_output.txt
+test_golden_goal.py
+fix_all_output.txtdata/scb_bulkfil_JE_20250512T094258_21.txt
+# Large data files
+data/*.txt

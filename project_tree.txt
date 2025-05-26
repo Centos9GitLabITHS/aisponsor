@@ -17,7 +17,7 @@ SponsorMatchAI/
 │   ├── test_fixes.py
 │   ├── test_recommendations.py
 │   ├── test_setup.py
-├── sponsor_match/
+├── golden_goal/
 │   ├── core/
 │   │   ├── config.py
 │   │   └── db.py

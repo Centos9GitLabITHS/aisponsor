@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from sqlalchemy import text, inspect
-from sponsor_match.core.db import get_engine
+from golden_goal.core.db import get_engine
 
 
 def diagnose_sql_issues():
@@ -135,11 +135,11 @@ def main():
     print("\n🔧 Checking and fixing common files...")
 
     files_to_check = [
-        'sponsor_match/utils/check_db.py',
-        'sponsor_match/services/service.py',
-        'sponsor_match/ml/pipeline.py',
-        'sponsor_match/utils/setup_database.py',
-        'sponsor_match/utils/train_clustering_models.py'
+        'golden_goal/utils/check_db.py',
+        'golden_goal/services/service.py',
+        'golden_goal/ml/pipeline.py',
+        'golden_goal/utils/setup_database.py',
+        'golden_goal/utils/train_clustering_models.py'
     ]
 
     for file_path in files_to_check:
@@ -152,7 +152,7 @@ def main():
     print("\n✅ SQL fix complete!")
     print("\nNext steps:")
     print("1. Run: python fix_all.py")
-    print("2. Then: streamlit run sponsor_match/ui/simple_app.py")
+    print("2. Then: streamlit run golden_goal/ui/simple_app.py")
 
 
 if __name__ == "__main__":

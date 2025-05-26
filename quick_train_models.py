@@ -14,7 +14,7 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sqlalchemy import text
 
-from sponsor_match.core.db import get_engine
+from golden_goal.core.db import get_engine
 
 
 def train_models():
@@ -24,7 +24,7 @@ def train_models():
     engine = get_engine()
 
     # Create models directory
-    models_dir = Path(__file__).parent.parent / "sponsor_match" / "models"
+    models_dir = Path(__file__).parent.parent / "golden_goal" / "models"
     models_dir.mkdir(exist_ok=True, parents=True)
     print(f"Models directory: {models_dir}")
 
@@ -98,7 +98,7 @@ def train_models():
     print("\nModels trained successfully!")
 
     # Test loading
-    from sponsor_match.ml.pipeline import load_models
+    from golden_goal.ml.pipeline import load_models
     models = load_models()
     print(f"\nVerification: Loaded {len(models)} models: {list(models.keys())}")
 

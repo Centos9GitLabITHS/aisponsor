@@ -25,7 +25,7 @@ from tqdm import tqdm  # Progress bars
 CACHE_FILE = Path("data/geocode_cache.pkl")
 CHECKPOINT_INTERVAL = 1000
 NOMINATIM_URL = os.getenv("NOMINATIM_URL", "https://nominatim.openstreetmap.org")
-USER_AGENT = "sponsor_match_geo"
+USER_AGENT = "golden_goal_geo"
 
 # Initialise logger
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=logging.INFO)

@@ -54,12 +54,12 @@ def analyze_file(filepath):
 def main():
     """Main routine: scan project structure and report key components."""
     print("SponsorMatchAI Structure Discovery")
-    sponsor_match_dir = project_root / 'sponsor_match'
-    if not sponsor_match_dir.exists():
-        print(f"Error: sponsor_match directory not found at {sponsor_match_dir}")
+    golden_goal_dir = project_root / 'golden_goal'
+    if not golden_goal_dir.exists():
+        print(f"Error: golden_goal directory not found at {golden_goal_dir}")
         return
 
-    python_files = find_python_files(sponsor_match_dir)
+    python_files = find_python_files(golden_goal_dir)
     structure = {}
     # Analyze each file
     for file in python_files:

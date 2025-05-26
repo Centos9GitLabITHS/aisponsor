@@ -7,9 +7,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from sponsor_match.core.db import get_engine
-from sponsor_match.utils.setup_database import setup_database
-from sponsor_match.utils.train_clustering_models import train_all_models
+from golden_goal.core.db import get_engine
+from golden_goal.utils.setup_database import setup_database
+from golden_goal.utils.train_clustering_models import train_all_models
 from sqlalchemy import text
 
 
@@ -64,7 +64,7 @@ def fix_models():
     """Train clustering models"""
     print("\n🤖 Training clustering models...")
     try:
-        models_dir = Path(__file__).parent / "sponsor_match" / "models"
+        models_dir = Path(__file__).parent / "golden_goal" / "models"
         models_dir.mkdir(exist_ok=True)
         train_all_models()
 
@@ -90,9 +90,9 @@ def test_recommendations():
     """Test that recommendations work"""
     print("\n🧪 Testing recommendation system...")
     try:
-        from sponsor_match.services.service import SponsorMatchService
+        from golden_goal import GoldenGoalService
         engine = get_engine()
-        service = SponsorMatchService(engine)
+        service = GoldenGoalService(engine)
 
         # Get a test association
         with engine.connect() as conn:
@@ -119,15 +119,15 @@ def create_test_script():
     test_script = '''#!/usr/bin/env python3
 """Quick test script for SponsorMatch AI"""
 
-from sponsor_match.core.db import get_engine
-from sponsor_match.services.service import SponsorMatchService
+from golden_goal.core.db import get_engine
+from golden_goal.services.service import GoldenGoalService
 
 # Test database connection
 engine = get_engine()
 print("✅ Database connected")
 
 # Test service
-service = SponsorMatchService(engine)
+service = GoldenGoalService(engine)
 
 # Test search
 results = service.search("IFK")
@@ -145,9 +145,9 @@ if not results.empty:
         print(f"  {top['name']} - Score: {top['score']*100:.1f}%")
 '''
 
-    with open('test_sponsor_match.py', 'w') as f:
+    with open('test_golden_goal.py', 'w') as f:
         f.write(test_script)
-    print("\n📄 Created test_sponsor_match.py for manual testing")
+    print("\n📄 Created test_golden_goal.py for manual testing")
 
 
 def main():
@@ -177,9 +177,9 @@ def main():
     print("\n" + "=" * 50)
     print("✅ Setup complete!")
     print("\nTo run the application:")
-    print("  streamlit run sponsor_match/ui/simple_app.py")
+    print("  streamlit run golden_goal/ui/simple_app.py")
     print("\nTo test manually:")
-    print("  python test_sponsor_match.py")
+    print("  python test_golden_goal.py")
     print("\nIf you encounter issues:")
     print("  1. Check that MySQL is running")
     print("  2. Verify your .env file has correct database credentials")

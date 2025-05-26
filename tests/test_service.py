@@ -4,7 +4,7 @@
 import pytest
 from sqlalchemy import create_engine, text
 
-from sponsor_match.services.service import search, recommend
+from golden_goal import search, recommend
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def engine(tmp_path, monkeypatch):
 
 def test_search_finds_club_and_sponsor(engine, monkeypatch):
     # If your search() calls get_engine(), patch it; otherwise pass engine directly
-    # monkeypatch.setattr("sponsor_match.services.service.get_engine", lambda: engine)
+    # monkeypatch.setattr("golden_goal.services.service.get_engine", lambda: engine)
 
     # Search for "Test" should return the club entry
     df = search(engine, "Test")
@@ -66,8 +66,8 @@ def test_recommend_no_match_returns_empty(engine):
 
 def test_recommend_fallback_by_distance(engine, monkeypatch):
     # Force clustering to fail so fallback logic kicks in
-    monkeypatch.setattr("sponsor_match.services.service.load_model", lambda: None)
-    monkeypatch.setattr("sponsor_match.services.service.predict", lambda lat, lon, model=None: None)
+    monkeypatch.setattr("golden_goal.services.service.load_model", lambda: None)
+    monkeypatch.setattr("golden_goal.services.service.predict", lambda lat, lon, model=None: None)
 
     df = recommend(engine, "Test Club", top_n=1)
     assert not df.empty

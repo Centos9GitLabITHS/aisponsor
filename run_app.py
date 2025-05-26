@@ -83,8 +83,8 @@ def check_data_files():
 
 def check_app_structure():
     """Check if the app structure exists."""
-    app_path = Path(__file__).parent / "sponsor_match" / "ui" / "simple_app.py"
-    service_path = Path(__file__).parent / "sponsor_match" / "services" / "simple_service.py"
+    app_path = Path(__file__).parent / "golden_goal" / "ui" / "simple_app.py"
+    service_path = Path(__file__).parent / "golden_goal" / "services" / "simple_service.py"
 
     missing = []
     if not app_path.exists():
@@ -129,7 +129,7 @@ def main():
     print("✅ App structure complete")
 
     # Launch app
-    app_path = Path(__file__).parent / "sponsor_match" / "ui" / "simple_app.py"
+    app_path = Path(__file__).parent / "golden_goal" / "ui" / "simple_app.py"
     print(f"\n🚀 Starting SponsorMatch AI...")
     print(f"📂 Running: {app_path}")
     print(f"\n{'=' * 50}")

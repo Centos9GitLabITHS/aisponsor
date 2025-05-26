@@ -4,7 +4,7 @@ optimize_database.py - Add indexes and optimize database for performance
 """
 
 from sqlalchemy import text
-from sponsor_match.core.db import get_engine
+from golden_goal.core.db import get_engine
 
 
 def optimize_database():

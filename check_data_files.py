@@ -14,9 +14,9 @@ def check_data_directory():
     # Look for data directory in various locations
     possible_dirs = [
         Path("data"),
-        Path("sponsor_match/data"),
+        Path("golden_goal/data"),
         Path(__file__).parent / "data",
-        Path(__file__).parent / "sponsor_match" / "data"
+        Path(__file__).parent / "golden_goal" / "data"
     ]
     
     data_dir = None

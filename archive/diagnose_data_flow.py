@@ -8,9 +8,9 @@
 import json
 
 # Standard library or third-party import
-from sponsor_match.core.db import get_engine
+from golden_goal.core.db import get_engine
 # Standard library or third-party import
-from sponsor_match.ml.pipeline import score_and_rank
+from golden_goal.ml.pipeline import score_and_rank
 
 
 # Definition of function 'diagnose': explains purpose and parameters

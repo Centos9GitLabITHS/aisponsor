@@ -13,7 +13,7 @@ import joblib
 import pandas as pd
 from sklearn.cluster import KMeans
 
-from sponsor_match.core.db import get_engine
+from golden_goal.core.db import get_engine
 
 
 def size_bucket_to_numeric(size_bucket):

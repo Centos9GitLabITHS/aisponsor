@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sponsor_match.ml.pipeline import load_models, score_and_rank_optimized
-from sponsor_match.core.db import get_engine
+from golden_goal.ml.pipeline import load_models, score_and_rank_optimized
+from golden_goal.core.db import get_engine
 from sqlalchemy import text
 
 
@@ -20,7 +20,7 @@ def check_ml_models():
     
     # Check model files
     project_root = Path(__file__).parent.parent
-    models_dir = project_root / "sponsor_match" / "models"
+    models_dir = project_root / "golden_goal" / "models"
     
     print(f"\n1. Checking models directory: {models_dir}")
     if models_dir.exists():
@@ -117,7 +117,7 @@ def check_scoring_components():
     """Test individual scoring components."""
     print("\n4. Testing scoring components...")
     
-    from sponsor_match.ml.pipeline import (
+    from golden_goal.ml.pipeline import (
         calculate_distance_score,
         calculate_size_match_score
     )

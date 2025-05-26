@@ -10,14 +10,14 @@ def build_data(ctx):
     """
     Build and preprocess association data CSV (including geocoding).
     """
-    ctx.run("python -m sponsor_match.data.build_associations_csv", pty=True)
+    ctx.run("python -m golden_goal.data.build_associations_csv", pty=True)
 
 @task
 def ingest_data(ctx):
     """
     Ingest the associations CSV into the MySQL database.
     """
-    ctx.run("python -m sponsor_match.data.ingest_associations", pty=True)
+    ctx.run("python -m golden_goal.data.ingest_associations", pty=True)
 
 @task(pre=[build_data, ingest_data])
 def refresh_db(ctx):

@@ -4,9 +4,9 @@
 #!/usr/bin/env python3
 """Test the recommendation pipeline to see what data is returned."""
 
-from sponsor_match.core.db import get_engine
-from sponsor_match.ml.pipeline import score_and_rank
-from sponsor_match.services.service import SponsorMatchService
+from golden_goal.core.db import get_engine
+from golden_goal.ml.pipeline import score_and_rank
+from golden_goal import GoldenGoalService
 
 
 def test_recommendations():
@@ -33,7 +33,7 @@ def test_recommendations():
 
     # Test service layer
     engine = get_engine()
-    service = SponsorMatchService(engine)
+    service = GoldenGoalService(engine)
 
     # Get association details
     assoc = service.get_association_by_name("Ahlafors IF")

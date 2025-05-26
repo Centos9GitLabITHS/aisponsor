@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sponsor_match.services.service import SponsorMatchService
-from sponsor_match.core.db import get_engine
+from golden_goal import GoldenGoalService
+from golden_goal.core.db import get_engine
 
 
 def verify_scoring():
@@ -19,7 +19,7 @@ def verify_scoring():
 
     # Initialize service
     engine = get_engine()
-    service = SponsorMatchService(engine)
+    service = GoldenGoalService(engine)
 
     # Test with a known association
     test_associations = [

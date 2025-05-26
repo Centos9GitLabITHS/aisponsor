@@ -16,7 +16,7 @@ def test_database_connection():
     """Test database connection."""
     print("Testing database connection...")
     try:
-        from sponsor_match.core.db import get_engine
+        from golden_goal.core.db import get_engine
         engine = get_engine()
         with engine.connect() as conn:
             result = conn.execute("SELECT 1")
@@ -31,8 +31,8 @@ def test_imports():
     """Test critical imports."""
     print("Testing imports...")
     try:
-        from sponsor_match.services.service import search, recommend
-        from sponsor_match.ml.pipeline import score_and_rank
+        from golden_goal import search, recommend
+        from golden_goal.ml.pipeline import score_and_rank
         print("✅ Critical imports successful")
         return True
     except Exception as e:
@@ -44,7 +44,7 @@ def test_clustering():
     """Test clustering pipeline."""
     print("Testing clustering...")
     try:
-        from sponsor_match.ml.pipeline import score_and_rank
+        from golden_goal.ml.pipeline import score_and_rank
         # Test with fake data
         results = score_and_rank(1, "medium", max_distance=50, top_n=5)
         print(f"✅ Clustering test successful (got {len(results)} results)")

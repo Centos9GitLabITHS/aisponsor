@@ -1,5 +1,5 @@
 {
-  "sponsor_match/features.py": {
+  "golden_goal/features.py": {
     "functions": [
       "calculate_distance_km",
       "add_distance",
@@ -16,7 +16,7 @@
       "from pandas"
     ]
   },
-  "sponsor_match/services/recommendation.py": {
+  "golden_goal/services/recommendation.py": {
     "functions": [
       "__init__",
       "recommend"
@@ -27,11 +27,11 @@
     "imports": [
       "logging",
       "from typing",
-      "from sponsor_match.core.db",
-      "from sponsor_match.services.service_v2"
+      "from golden_goal.core.db",
+      "from golden_goal.services.service_v2"
     ]
   },
-  "sponsor_match/services/service_v2.py": {
+  "golden_goal/services/service_v2.py": {
     "functions": [
       "__init__",
       "_get_club_by_id",
@@ -42,7 +42,7 @@
     "classes": [
       "RecommendationRequest",
       "RecommendationResult",
-      "SponsorMatchService"
+      "GoldenGoalService"
     ],
     "imports": [
       "logging",
@@ -54,12 +54,12 @@
       "from geopy.distance"
     ]
   },
-  "sponsor_match/cli/__init__.py": {
+  "golden_goal/cli/__init__.py": {
     "functions": [],
     "classes": [],
     "imports": []
   },
-  "sponsor_match/cli/train_matcher.py": {
+  "golden_goal/cli/train_matcher.py": {
     "functions": [
       "main"
     ],
@@ -72,10 +72,10 @@
       "joblib",
       "from sklearn.model_selection",
       "from sklearn.ensemble",
-      "from sponsor_match.features"
+      "from golden_goal.features"
     ]
   },
-  "sponsor_match/cli/db_init.py": {
+  "golden_goal/cli/db_init.py": {
     "functions": [
       "main"
     ],
@@ -84,10 +84,10 @@
       "logging",
       "from argparse",
       "from textwrap",
-      "from sponsor_match.core.db"
+      "from golden_goal.core.db"
     ]
   },
-  "sponsor_match/ui/app_v2.py": {
+  "golden_goal/ui/app_v2.py": {
     "functions": [
       "main",
       "__init__",
@@ -118,17 +118,17 @@
       "from folium.map",
       "from folium.plugins",
       "from streamlit_folium",
-      "from sponsor_match.core.config",
-      "from sponsor_match.core.db",
-      "from sponsor_match.services.service_v2"
+      "from golden_goal.core.config",
+      "from golden_goal.core.db",
+      "from golden_goal.services.service_v2"
     ]
   },
-  "sponsor_match/ui/__init__.py": {
+  "golden_goal/ui/__init__.py": {
     "functions": [],
     "classes": [],
     "imports": []
   },
-  "sponsor_match/core/config.py": {
+  "golden_goal/core/config.py": {
     "functions": [],
     "classes": [
       "Config"
@@ -140,7 +140,7 @@
       "from dotenv"
     ]
   },
-  "sponsor_match/core/logger.py": {
+  "golden_goal/core/logger.py": {
     "functions": [
       "setup_logger"
     ],
@@ -151,7 +151,7 @@
       "from pathlib"
     ]
   },
-  "sponsor_match/core/db.py": {
+  "golden_goal/core/db.py": {
     "functions": [
       "get_engine"
     ],
@@ -163,10 +163,10 @@
       "from dotenv",
       "from sqlalchemy",
       "from sqlalchemy.engine",
-      "from sponsor_match.core.config"
+      "from golden_goal.core.config"
     ]
   },
-  "sponsor_match/models/clustering.py": {
+  "golden_goal/models/clustering.py": {
     "functions": [
       "train_kmeans_for_bucket",
       "main"
@@ -178,11 +178,11 @@
       "joblib",
       "pandas",
       "from sklearn.cluster",
-      "from sponsor_match.core.db",
-      "from sponsor_match.core.config"
+      "from golden_goal.core.db",
+      "from golden_goal.core.config"
     ]
   },
-  "sponsor_match/models/club_extended.py": {
+  "golden_goal/models/club_extended.py": {
     "functions": [],
     "classes": [
       "ExtendedClub"
@@ -192,12 +192,12 @@
       "from typing"
     ]
   },
-  "sponsor_match/models/__init__.py": {
+  "golden_goal/models/__init__.py": {
     "functions": [],
     "classes": [],
     "imports": []
   },
-  "sponsor_match/models/models.py": {
+  "golden_goal/models/models.py": {
     "functions": [
       "__init__",
       "train",
@@ -216,7 +216,7 @@
       "lightgbm"
     ]
   },
-  "sponsor_match/models/entities.py": {
+  "golden_goal/models/entities.py": {
     "functions": [],
     "classes": [
       "Club",
@@ -227,7 +227,7 @@
       "from typing"
     ]
   },
-  "sponsor_match/models/features.py": {
+  "golden_goal/models/features.py": {
     "functions": [
       "calculate_distance",
       "calculate_size_match",
@@ -250,12 +250,12 @@
       "from geopy.distance"
     ]
   },
-  "sponsor_match/data/__init__.py": {
+  "golden_goal/data/__init__.py": {
     "functions": [],
     "classes": [],
     "imports": []
   },
-  "sponsor_match/data/ingest_associations.py": {
+  "golden_goal/data/ingest_associations.py": {
     "functions": [
       "main"
     ],
@@ -268,7 +268,7 @@
       "from sqlalchemy"
     ]
   },
-  "sponsor_match/data/ingest_csv.py": {
+  "golden_goal/data/ingest_csv.py": {
     "functions": [
       "main"
     ],
@@ -279,7 +279,7 @@
       "from pathlib",
       "pandas",
       "from sqlalchemy",
-      "from sponsor_match.core.db"
+      "from golden_goal.core.db"
     ]
   }
 }

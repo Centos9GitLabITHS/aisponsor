@@ -4,7 +4,7 @@
 import pandas as pd
 import pytest
 
-from sponsor_match.models.clustering import train, load_model, predict
+from golden_goal.models.clustering import train, load_model, predict
 
 
 @pytest.fixture(autouse=True)

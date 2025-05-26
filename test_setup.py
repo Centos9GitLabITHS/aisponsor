@@ -152,7 +152,7 @@ def test_database():
     print(f"\n{BLUE}Testing database connection...{RESET}")
 
     try:
-        from sponsor_match.core.db import get_engine
+        from golden_goal.core.db import get_engine
         engine = get_engine()
         with engine.connect() as conn:
             result = conn.execute("SELECT 1")

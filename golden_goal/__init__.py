@@ -1,0 +1,2 @@
+class GoldenGoalService:
+    pass

@@ -118,7 +118,7 @@ def check_database_connection():
     """Test database connection"""
     try:
 # Standard library or third-party import
-        from sponsor_match.core.db import get_engine
+        from golden_goal.core.db import get_engine
         engine = get_engine()
         with engine.connect() as conn:
             result = conn.execute("SELECT 1")
@@ -180,8 +180,8 @@ def quick_app_test():
 
     # Check which app file exists
     app_files = [
-        Path('sponsor_match/ui/simple_app.py'),
-        Path('sponsor_match/ui/app.py'),
+        Path('golden_goal/ui/simple_app.py'),
+        Path('golden_goal/ui/app.py'),
         Path('streamlit_app.py')
     ]
 
@@ -233,7 +233,7 @@ def run_diagnostics():
         print(f"\n{GREEN}Ready to run the app with:{RESET}")
         print(f"  {BLUE}python run_app.py{RESET}")
         print(f"  or")
-        print(f"  {BLUE}streamlit run sponsor_match/ui/simple_app.py{RESET}")
+        print(f"  {BLUE}streamlit run golden_goal/ui/simple_app.py{RESET}")
     else:
         print_status(f"Failed checks: {', '.join(failed_checks)}", 'error')
         print(f"\n{YELLOW}Quick fixes:{RESET}")

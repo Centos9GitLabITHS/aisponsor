@@ -9,8 +9,8 @@ from pathlib import Path
 from sqlalchemy import text
 import numpy as np
 
-from sponsor_match.core.db import get_engine
-from sponsor_match.models.entities import Base
+from golden_goal.core.db import get_engine
+from golden_goal.models.entities import Base
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def load_full_associations(engine):
     possible_files = [
         data_dir / "associations_prepared.csv",
         Path("data/associations_prepared.csv"),
-        Path("sponsor_match/data/associations_prepared.csv")
+        Path("golden_goal/data/associations_prepared.csv")
     ]
 
     associations_file = None
@@ -119,7 +119,7 @@ def load_full_companies(engine):
     possible_files = [
         data_dir / "companies_prepared.csv",
         Path("data/companies_prepared.csv"),
-        Path("sponsor_match/data/companies_prepared.csv")
+        Path("golden_goal/data/companies_prepared.csv")
     ]
 
     companies_file = None
@@ -316,8 +316,8 @@ def main():
 
     logger.info("\n✅ Full dataset loading complete!")
     logger.info("\nNext steps:")
-    logger.info("1. Retrain the clustering models: python sponsor_match/utils/train_clustering_models.py")
-    logger.info("2. Run the app: streamlit run sponsor_match/ui/simple_app.py")
+    logger.info("1. Retrain the clustering models: python golden_goal/utils/train_clustering_models.py")
+    logger.info("2. Run the app: streamlit run golden_goal/ui/simple_app.py")
 
 
 if __name__ == "__main__":

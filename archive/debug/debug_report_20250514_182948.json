@@ -11,13 +11,13 @@
       "name": "Entity Loading",
       "timestamp": "2025-05-14T18:29:47.472970",
       "success": false,
-      "error": "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+      "error": "Column expression, FROM clause, or other columns clause element expected, got <class 'golden_goal.models.entities.Club'>."
     },
     {
       "name": "Service Layer",
       "timestamp": "2025-05-14T18:29:47.531033",
       "success": false,
-      "error": "SponsorMatchService.__init__() missing 2 required positional arguments: 'db_engine' and 'cluster_models'"
+      "error": "GoldenGoalService.__init__() missing 2 required positional arguments: 'db_engine' and 'cluster_models'"
     },
     {
       "name": "Distance Calculation",
@@ -29,7 +29,7 @@
       "name": "Search Functionality",
       "timestamp": "2025-05-14T18:29:47.532722",
       "success": false,
-      "error": "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+      "error": "Column expression, FROM clause, or other columns clause element expected, got <class 'golden_goal.models.entities.Club'>."
     },
     {
       "name": "UI Integration",
@@ -45,15 +45,15 @@
     ],
     [
       "Entity Loading",
-      "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+      "Column expression, FROM clause, or other columns clause element expected, got <class 'golden_goal.models.entities.Club'>."
     ],
     [
       "Service Layer",
-      "SponsorMatchService.__init__() missing 2 required positional arguments: 'db_engine' and 'cluster_models'"
+      "GoldenGoalService.__init__() missing 2 required positional arguments: 'db_engine' and 'cluster_models'"
     ],
     [
       "Search Functionality",
-      "Column expression, FROM clause, or other columns clause element expected, got <class 'sponsor_match.models.entities.Club'>."
+      "Column expression, FROM clause, or other columns clause element expected, got <class 'golden_goal.models.entities.Club'>."
     ]
   ],
   "data_snapshots": {

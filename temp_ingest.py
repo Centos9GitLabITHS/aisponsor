@@ -4,7 +4,7 @@
 # temp_ingest.py
 import pandas as pd
 
-from sponsor_match.core.db import get_engine
+from golden_goal.core.db import get_engine
 
 df = pd.read_csv('../final/data/gothenburg_associations.csv')
 df_clean = pd.DataFrame({

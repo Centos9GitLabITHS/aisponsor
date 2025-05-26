@@ -5,7 +5,7 @@ fix_company_names.py - Generate better company names and optimize performance
 
 import pandas as pd
 from sqlalchemy import text
-from sponsor_match.core.db import get_engine
+from golden_goal.core.db import get_engine
 import logging
 
 logging.basicConfig(level=logging.INFO)

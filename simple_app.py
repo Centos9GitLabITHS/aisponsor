@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # pylint: disable=unused-import, unused-variable, duplicate-code
 """
-sponsor_match/ui/simple_app.py
+golden_goal/ui/simple_app.py
 FINAL VERSION - Streamlit UI for SponsorMatch AI.
 """
 
@@ -18,8 +18,8 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import the service and database engine
-from sponsor_match.services.service import SponsorMatchService
-from sponsor_match.core.db import get_engine
+from golden_goal import GoldenGoalService
+from golden_goal.core.db import get_engine
 
 # Page configuration
 st.set_page_config(
@@ -66,12 +66,12 @@ h3 { font-size: clamp(1rem, 2vw, 1.5rem) !important; color: #2563eb; }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize or cache the SponsorMatchService
+# Initialize or cache the GoldenGoalService
 @st.cache_resource
 def get_service():
-    """Initialize SponsorMatchService once."""
+    """Initialize GoldenGoalService once."""
     engine = get_engine()
-    return SponsorMatchService(engine)
+    return GoldenGoalService(engine)
 
 # Navigation helpers
 def navigate_to(page: str):
