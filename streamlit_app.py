@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Launcher for Streamlit Cloud - DO NOT MODIFY"""
+"""Streamlit Cloud Launcher for Golden Goal AI"""
 import sys
 import os
 
-# Add the project root to Python path for imports
+# Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Import and run the actual app
+# Import and run the app
 from golden_goal.ui.simple_app import *
