@@ -15,6 +15,7 @@ project_root = current_file.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 import folium
+import folium.plugins
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -116,14 +117,47 @@ def render_home_page():
 
 
 # Utility to create a base map
+# Update the create_map function in simple_app.py (around line 118)
+# Replace the existing create_map function with this:
+
 def create_map(center_lat=57.7089, center_lon=11.9746, zoom=11):
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom,
-                   tiles=None, control_scale=True)
+    """Create a base map with better zoom control."""
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=zoom,
+        tiles=None,
+        control_scale=True,
+        # Add zoom control options for finer control
+        zoom_control=True,
+        scrollWheelZoom=True,
+        dragging=True,
+        doubleClickZoom=True,
+        # Set min/max zoom levels
+        min_zoom=8,
+        max_zoom=20,
+        # More gradual zoom with scroll wheel
+        zoomDelta=0.5,  # Zoom in/out by 0.5 levels instead of 1
+        zoomSnap=0.25  # Allow quarter zoom levels
+    )
+
+    # Add the OpenStreetMap tile layer with better detail at high zoom
     folium.TileLayer(
         tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
         attr="© OpenStreetMap contributors",
-        name="OpenStreetMap", control=False, max_zoom=19
+        name="OpenStreetMap",
+        control=False,
+        max_zoom=20,  # Allow detailed zoom
+        max_native_zoom=19  # Maximum zoom level of tiles
     ).add_to(m)
+
+    # Add zoom control buttons with custom position
+    folium.plugins.Fullscreen(
+        position='topright',
+        title='Fullscreen',
+        title_cancel='Exit Fullscreen',
+        force_separate_button=True
+    ).add_to(m)
+
     return m
 
 
