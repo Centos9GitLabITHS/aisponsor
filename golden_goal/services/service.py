@@ -2,8 +2,7 @@
 """
 golden_goal/services/service.py
 ---------------------------------
-OPTIMIZED service layer for Streamlit Cloud deployment.
-Uses CSV files instead of database for better performance.
+FIXED VERSION - Uses associations_prepared.csv for correct size buckets
 """
 
 import logging
@@ -78,10 +77,10 @@ class GoldenGoalService:
         project_root = Path(__file__).parent.parent.parent
         data_dir = project_root / "data"
 
-        # Load associations
+        # Load associations - PRIORITIZE associations_prepared.csv
         assoc_files = [
+            "associations_prepared.csv",  # This has size_bucket and correct lat/lon
             "associations_geocoded.csv",
-            "associations_prepared.csv",
             "associations_geocoded_prepared.csv",
             "gothenburg_associations.csv",
             "sample_associations.csv"
@@ -93,7 +92,26 @@ class GoldenGoalService:
                 try:
                     self.associations_df = pd.read_csv(filepath)
 
-                    # Standardize column names
+                    # Check if this is associations_prepared.csv with correct structure
+                    if filename == "associations_prepared.csv":
+                        # This file already has id, name, latitude, longitude, size_bucket
+                        logger.info(f"Loaded {len(self.associations_df)} associations from {filename}")
+                        logger.info(f"Columns: {list(self.associations_df.columns)}")
+
+                        # Ensure lat/lon columns exist (some files use latitude/longitude)
+                        if 'latitude' in self.associations_df.columns and 'lat' not in self.associations_df.columns:
+                            self.associations_df['lat'] = self.associations_df['latitude']
+                        if 'longitude' in self.associations_df.columns and 'lon' not in self.associations_df.columns:
+                            self.associations_df['lon'] = self.associations_df['longitude']
+
+                        # Log size distribution
+                        if 'size_bucket' in self.associations_df.columns:
+                            size_dist = self.associations_df['size_bucket'].value_counts()
+                            logger.info(f"Association sizes: {size_dist.to_dict()}")
+
+                        break  # Use this file, don't continue looking
+
+                    # For other files, apply the standard column mapping
                     column_mapping = {
                         'Föreningsnamn': 'name',
                         'Association Name': 'name',
@@ -114,7 +132,7 @@ class GoldenGoalService:
                         'stad': 'city',
                         'Postnummer': 'postal_code',
                         'postnummer': 'postal_code',
-                        'Post Nr': 'postal_code'  # Added this for space-separated postal code
+                        'Post Nr': 'postal_code'
                     }
 
                     # Rename columns if they exist
@@ -141,20 +159,13 @@ class GoldenGoalService:
 
                     logger.info(f"Loaded {len(self.associations_df)} associations from {filename}")
                     logger.info(f"Columns: {list(self.associations_df.columns)}")
-                    # Debug: show first row to see actual data
-                    if len(self.associations_df) > 0:
-                        first_row = self.associations_df.iloc[0]
-                        logger.info(f"First association name: {first_row.get('name', 'NO NAME')}")
-                        logger.info(f"First association address: '{first_row.get('address', 'NO ADDRESS')}'")
-                        logger.info(
-                            f"First association city: '{first_row.get('city', first_row.get('Postort', 'NO CITY'))}'")
                     break
                 except Exception as e:
                     logger.error(f"Failed to load {filename}: {e}")
 
         # Load companies
         company_files = [
-            "companies_complete.csv",  # Add this line
+            "companies_complete.csv",  # This has company_name
             "companies_prepared.csv",
             "municipality_of_goteborg.csv",
             "companies_geocoded.csv",
@@ -175,6 +186,7 @@ class GoldenGoalService:
                         'Longitude': 'lon',
                         'Företagsnamn': 'name',
                         'Company Name': 'name',
+                        'company_name': 'name',  # For companies_complete.csv
                         'Bransch': 'industry',
                         'Industry': 'industry'
                     }
@@ -196,6 +208,12 @@ class GoldenGoalService:
 
                     logger.info(f"Loaded {len(self.companies_df)} companies from {filename}")
                     logger.info(f"Columns: {list(self.companies_df.columns)}")
+
+                    # Log sample company names
+                    if 'name' in self.companies_df.columns:
+                        sample_names = self.companies_df['name'].dropna().head(3).tolist()
+                        logger.info(f"Sample company names: {sample_names}")
+
                     break
                 except Exception as e:
                     logger.error(f"Failed to load {filename}: {e}")
@@ -395,22 +413,6 @@ class GoldenGoalService:
 
         except Exception as e:
             logger.error(f"Recommendation error: {e}")
-            # Fallback to using the original pipeline if available
-            try:
-                recommendations = score_and_rank_optimized(
-                    association_id=assoc['id'],
-                    bucket=assoc['size_bucket'],
-                    max_distance=max_distance,
-                    top_n=top_n,
-                    weights=self.scoring_weights
-                )
-                if recommendations:
-                    df = pd.DataFrame(recommendations)
-                    df['score_percentage'] = df['score'].apply(lambda x: round(np.clip(x, 0, 1) * 100, 1))
-                    return df
-            except:
-                pass
-
             return pd.DataFrame()
 
     def _score_companies_csv(self, association: Dict, max_distance: float, top_n: int) -> List[Dict]:
@@ -428,12 +430,6 @@ class GoldenGoalService:
         assoc_size = association['size_bucket']
 
         recommendations = []
-
-        # Debug: Check first company
-        if len(self.companies_df) > 0:
-            first_company = self.companies_df.iloc[0]
-            logger.info(
-                f"First company in scoring: name='{first_company.get('name', 'NO NAME')}', id={first_company.get('id', 'NO ID')}")
 
         for idx, company in self.companies_df.iterrows():
             comp_lat = float(company.get('lat', company.get('latitude', 0)))
@@ -465,15 +461,10 @@ class GoldenGoalService:
                     0.2 * industry_score
             )
 
-            # Get company name with better fallback
+            # Get company name
             company_name = str(company.get('name', ''))
-            if not company_name or company_name == 'nan':
+            if not company_name or company_name == 'nan' or pd.isna(company_name):
                 company_name = f"Company_{company.get('id', idx)}"
-
-            # Debug first few companies
-            if len(recommendations) < 3:
-                logger.info(
-                    f"Adding company: name='{company_name}', id={company.get('id', 'NO ID')}, score={final_score:.3f}")
 
             recommendations.append({
                 "id": int(company.get('id', 0)),
